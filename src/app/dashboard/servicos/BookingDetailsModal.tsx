@@ -95,18 +95,19 @@ export default function BookingDetailsModal({
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-50">
       <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
-        <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+        <header className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
           <h3 className="text-lg font-bold text-[#0B192C]">Editar / Detalhes do Agendamento</h3>
           <button
+            type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
           >
             ✕
           </button>
-        </div>
+        </header>
 
         {errorMsg && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 font-mono break-all">
+          <div role="alert" className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 font-mono break-all">
             {errorMsg}
           </div>
         )}
@@ -120,10 +121,11 @@ export default function BookingDetailsModal({
           {/* Editar Data e Hora */}
           <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3.5 border border-slate-200 rounded-xl">
             <div>
-              <label className="block text-xs font-bold text-[#0B192C] uppercase mb-1">
+              <label htmlFor="modal-edit-date" className="block text-xs font-bold text-[#0B192C] uppercase mb-1">
                 Data do Serviço
               </label>
               <input
+                id="modal-edit-date"
                 type="date"
                 value={editDate}
                 onChange={(e) => setEditDate(e.target.value)}
@@ -132,10 +134,11 @@ export default function BookingDetailsModal({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#0B192C] uppercase mb-1">
+              <label htmlFor="modal-edit-time" className="block text-xs font-bold text-[#0B192C] uppercase mb-1">
                 Hora do Serviço
               </label>
               <input
+                id="modal-edit-time"
                 type="time"
                 value={editTime}
                 onChange={(e) => setEditTime(e.target.value)}
@@ -146,10 +149,11 @@ export default function BookingDetailsModal({
 
           {/* Editar Estado */}
           <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-            <label className="block text-xs font-bold text-[#0B192C] uppercase mb-1.5">
+            <label htmlFor="modal-edit-status" className="block text-xs font-bold text-[#0B192C] uppercase mb-1.5">
               Estado Atual
             </label>
             <select
+              id="modal-edit-status"
               value={editStatus}
               onChange={(e) => setEditStatus(e.target.value as any)}
               className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
@@ -170,7 +174,7 @@ export default function BookingDetailsModal({
         </div>
 
         {/* Botões de Ação */}
-        <div className="flex justify-between items-center pt-6 border-t border-slate-100 mt-6">
+        <footer className="flex justify-between items-center pt-6 border-t border-slate-100 mt-6">
           <button
             type="button"
             disabled={deleting || updating}
@@ -197,7 +201,7 @@ export default function BookingDetailsModal({
               {updating ? 'A guardar...' : 'Guardar Alterações'}
             </button>
           </div>
-        </div>
+        </footer>
       </div>
     </div>
   )

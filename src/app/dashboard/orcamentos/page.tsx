@@ -4,553 +4,619 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-interface QuoteRecord {
-  id: string
-  client_id?: string | null
-  client_name: string
-  client_phone: string
-  service_type: string
-  address: string
-  estimated_amount: number
-  status: 'pending' | 'sent' | 'approved' | 'rejected'
-  notes?: string | null
-  created_at: string
-}
-
-interface ClientOption {
+export interface Client {
   id: string
   name: string
   phone: string
-  address: string
+  email: string
+  address?: string
 }
 
-export default function OrcamentosPage() {
-  const [quotes, setQuotes] = useState<QuoteRecord[]>([])
-  const [clients, setClients] = useState<ClientOption[]>([])
+export interface Quote {
+  id: string
+  client_id: string
+  service_type: string
+  typology?: string
+  frequency?: string
+  subtotal: number
+  discount: number
+  vat_rate: number
+  total: number
+  estimated_cost: number
+  margin_percentage: number
+  status: 'pending' | 'sent' | 'approved' | 'rejected'
+  valid_until?: string
+  notes?: string
+  created_at: string
+  clients?: Client
+}
+
+export default function QuotesPage() {
+  const [quotes, setQuotes] = useState<Quote[]>([])
+  const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
 
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  // Modais
+  const [showModal, setShowModal] = useState(false)
+  const [viewingQuote, setViewingQuote] = useState<Quote | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [quoteForPDF, setQuoteForPDF] = useState<QuoteRecord | null>(null)
 
-  // Formulário
+  // Campos do Formulário de Orçamento
   const [selectedClientId, setSelectedClientId] = useState('')
-  const [clientName, setClientName] = useState('')
-  const [clientPhone, setClientPhone] = useState('')
-  const [serviceType, setServiceType] = useState('Higienização de Estofos & Sofás')
-  const [address, setAddress] = useState('')
-  const [estimatedAmount, setEstimatedAmount] = useState('145')
+  const [serviceType, setServiceType] = useState('Limpeza Residencial')
+  const [typology, setTypology] = useState('T2')
+  const [frequency, setFrequency] = useState('Semanal')
+  const [subtotal, setSubtotal] = useState('')
+  const [discount, setDiscount] = useState('0')
+  const [vatRate, setVatRate] = useState('23')
+  const [estimatedCost, setEstimatedCost] = useState('')
+  const [validDays, setValidDays] = useState('30')
   const [notes, setNotes] = useState('')
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-
-  const fetchData = async () => {
-    const { data: quotesData } = await supabase
-      .from('quotes')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    const { data: clientsData } = await supabase
-      .from('clients')
-      .select('id, name, phone, address')
-
-    if (quotesData) setQuotes(quotesData)
-    if (clientsData) setClients(clientsData)
-    setLoading(false)
-  }
 
   useEffect(() => {
     fetchData()
   }, [])
 
-  const handleClientSelect = (clientId: string) => {
-    setSelectedClientId(clientId)
-    const client = clients.find((c) => c.id === clientId)
-    if (client) {
-      setClientName(client.name)
-      setClientPhone(client.phone)
-      setAddress(client.address)
-    }
+  async function fetchData() {
+    setLoading(true)
+
+    const { data: quotesData } = await supabase
+      .from('quotes')
+      .select('*, clients(id, name, phone, email, address)')
+      .order('created_at', { ascending: false })
+
+    const { data: clientsData } = await supabase
+      .from('clients')
+      .select('id, name, phone, email, address')
+      .order('name', { ascending: true })
+
+    if (quotesData) setQuotes(quotesData as Quote[])
+    if (clientsData) setClients(clientsData as Client[])
+
+    setLoading(false)
   }
 
-  const handleCreateQuote = async (e: React.FormEvent) => {
+  const subtotalNum = parseFloat(subtotal) || 0
+  const discountNum = parseFloat(discount) || 0
+  const vatRateNum = parseFloat(vatRate) || 0
+  const estimatedCostNum = parseFloat(estimatedCost) || 0
+
+  const basePriceAfterDiscount = Math.max(0, subtotalNum - discountNum)
+  const vatAmount = (basePriceAfterDiscount * vatRateNum) / 100
+  const totalVal = basePriceAfterDiscount + vatAmount
+
+  const profitMargin = basePriceAfterDiscount > 0
+    ? (((basePriceAfterDiscount - estimatedCostNum) / basePriceAfterDiscount) * 100).toFixed(1)
+    : '0.0'
+
+  async function handleCreateQuote(e: React.FormEvent) {
     e.preventDefault()
-    setSubmitting(true)
-    setErrorMsg(null)
-
-    try {
-      let activeClientId = selectedClientId
-
-      // 1. Guarda na tabela 'clients' se for um cliente novo
-      if (!activeClientId) {
-        const { data: newClient } = await supabase
-          .from('clients')
-          .insert([
-            {
-              name: clientName,
-              phone: clientPhone,
-              address: address,
-              total_services: 0
-            }
-          ])
-          .select()
-          .single()
-
-        if (newClient) {
-          activeClientId = newClient.id
-        }
-      }
-
-      const parsedAmount = parseFloat(estimatedAmount.replace(',', '.')) || 145
-
-      const payload = {
-        client_id: activeClientId || null,
-        client_name: clientName,
-        client_phone: clientPhone,
-        service_type: serviceType,
-        address: address,
-        estimated_amount: parsedAmount,
-        status: 'pending',
-        notes: notes || null
-      }
-
-      // 2. Inserir na tabela 'quotes'
-      const { data: createdQuote, error: quoteError } = await supabase
-        .from('quotes')
-        .insert([payload])
-        .select()
-
-      if (quoteError) {
-        setErrorMsg(`Erro Supabase: ${quoteError.message}`)
-        setSubmitting(false)
-        return
-      }
-
-      // 3. Montar objeto para visualização imediata do PDF
-      const pdfData: QuoteRecord = (createdQuote && createdQuote[0]) ? createdQuote[0] : {
-        id: 'novo',
-        client_id: activeClientId,
-        client_name: clientName,
-        client_phone: clientPhone,
-        service_type: serviceType,
-        address: address,
-        estimated_amount: parsedAmount,
-        status: 'pending',
-        notes: notes,
-        created_at: new Date().toISOString()
-      }
-
-      await fetchData()
-      setIsModalOpen(false)
-
-      // Abrir o modal com o modelo PDF
-      setQuoteForPDF(pdfData)
-
-      // Limpar campos do formulário
-      setSelectedClientId('')
-      setClientName('')
-      setClientPhone('')
-      setAddress('')
-      setNotes('')
-    } catch (err: any) {
-      setErrorMsg(`Erro inesperado: ${err.message || String(err)}`)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const handleConvertToService = async (quote: QuoteRecord) => {
-    if (!window.confirm(`Pretende converter o orçamento de "${quote.client_name}" num serviço agendado?`)) {
+    if (!selectedClientId) {
+      alert('Por favor, selecione um cliente.')
       return
     }
 
-    try {
-      const { error: orderError } = await supabase.from('orders').insert([
-        {
-          client_id: quote.client_id || null,
-          service_type: quote.service_type,
-          scheduled_date: new Date(Date.now() + 86400000 * 2).toISOString(),
-          notes: `Cliente: ${quote.client_name} | Morada: ${quote.address}${quote.notes ? ` | Items: ${quote.notes}` : ''}`,
-          status: 'pending',
-          total_amount: quote.estimated_amount
-        }
-      ])
+    setSubmitting(true)
 
-      if (orderError) {
-        alert(`Erro ao criar agendamento: ${orderError.message}`)
-        return
-      }
+    const validUntilDate = new Date()
+    validUntilDate.setDate(validUntilDate.getDate() + (parseInt(validDays) || 30))
 
+    const payload = {
+      client_id: selectedClientId,
+      service_type: serviceType,
+      typology: typology || 'T2',
+      frequency: frequency || 'Pontual',
+      subtotal: subtotalNum,
+      discount: discountNum,
+      vat_rate: vatRateNum,
+      total: totalVal,
+      estimated_cost: estimatedCostNum,
+      margin_percentage: parseFloat(profitMargin) || 0,
+      status: 'pending',
+      valid_until: validUntilDate.toISOString().split('T')[0],
+      notes: notes || null,
+    }
+
+    const { error } = await supabase.from('quotes').insert([payload])
+
+    if (error) {
+      alert('Erro ao criar orçamento: ' + error.message)
+    } else {
+      closeModal()
+      fetchData()
+    }
+    setSubmitting(false)
+  }
+
+  async function handleUpdateQuoteStatus(quoteId: string, newStatus: string) {
+    const { error } = await supabase
+      .from('quotes')
+      .update({ status: newStatus })
+      .eq('id', quoteId)
+
+    if (error) {
+      alert('Erro ao atualizar estado: ' + error.message)
+    } else {
+      fetchData()
+    }
+  }
+
+  async function handleConvertToOrder(quote: Quote) {
+    if (!confirm(`Deseja agendar o serviço para o cliente com base neste orçamento aprovado?`)) {
+      return
+    }
+
+    const { error } = await supabase.from('orders').insert([
+      {
+        client_id: quote.client_id,
+        service_type: `${quote.service_type} (${quote.typology || 'T2'} - ${quote.frequency || 'Pontual'})`,
+        scheduled_date: new Date().toISOString(),
+        total_amount: quote.total,
+        status: 'pending',
+        notes: `Gerado a partir do Orçamento. ${quote.notes || ''}`,
+      },
+    ])
+
+    if (error) {
+      alert('Erro ao converter em agendamento: ' + error.message)
+    } else {
       await supabase.from('quotes').update({ status: 'approved' }).eq('id', quote.id)
-      alert('Orçamento convertido em Serviço Agendado com sucesso!')
-      fetchData()
-    } catch (err: any) {
-      alert(`Erro ao converter: ${err.message}`)
-    }
-  }
-
-  const handleUpdateStatus = async (quoteId: string, newStatus: QuoteRecord['status']) => {
-    await supabase.from('quotes').update({ status: newStatus }).eq('id', quoteId)
-    fetchData()
-  }
-
-  const handleDeleteQuote = async (quoteId: string) => {
-    if (window.confirm('Tem a certeza que pretende apagar este orçamento?')) {
-      await supabase.from('quotes').delete().eq('id', quoteId)
+      alert('Serviço agendado com sucesso no módulo de Serviços & Intervenções!')
       fetchData()
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return <span className="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2.5 py-1 rounded-full">🟢 Aprovado / Convertido</span>
-      case 'sent':
-        return <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-1 rounded-full">🔵 Proposta Enviada</span>
-      case 'rejected':
-        return <span className="bg-rose-100 text-rose-800 text-xs font-semibold px-2.5 py-1 rounded-full">🔴 Recusado</span>
-      default:
-        return <span className="bg-amber-100 text-amber-800 text-xs font-semibold px-2.5 py-1 rounded-full">🟡 Em Análise / Pendente</span>
-    }
+  function closeModal() {
+    setShowModal(false)
+    setViewingQuote(null)
+    setSelectedClientId('')
+    setServiceType('Limpeza Residencial')
+    setTypology('T2')
+    setFrequency('Semanal')
+    setSubtotal('')
+    setDiscount('0')
+    setVatRate('23')
+    setEstimatedCost('')
+    setNotes('')
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <p className="text-slate-600 font-medium">A carregar pipeline de orçamentos...</p>
-      </div>
-    )
+  // Função para imprimir / descarregar PDF da Proposta
+  function handlePrintPDF() {
+    window.print()
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-[#0B192C]">
+    <main className="min-h-screen bg-slate-50 text-[#0B192C]">
+      {/* Estilos para Impressão limpa do PDF */}
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #print-area, #print-area * {
+            visibility: visible;
+          }
+          #print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            background: white !important;
+            padding: 20px;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+
       {/* Cabeçalho */}
-      <header className="bg-[#0B192C] text-white py-4 px-6 shadow-md flex justify-between items-center print:hidden">
+      <header className="bg-[#0B192C] text-white py-4 px-8 shadow-md flex justify-between items-center border-b border-slate-800 no-print">
         <div className="flex items-center space-x-3">
-          <Link href="/dashboard" className="text-2xl font-bold text-[#00D4FF]">R&R</Link>
-          <span className="text-lg font-medium text-slate-200">Services — Gestão de Orçamentos & Propostas</span>
+          <div className="bg-[#00D4FF]/10 p-2 rounded-xl border border-[#00D4FF]/20">
+            <span className="text-2xl font-bold tracking-wider text-[#00D4FF]">R&R</span>
+          </div>
+          <div>
+            <span className="text-lg font-bold text-white block leading-none">Services</span>
+            <span className="text-xs text-slate-400">Propostas & Orçamentos Comerciais</span>
+          </div>
         </div>
         <Link
           href="/dashboard"
-          className="bg-slate-800 text-slate-200 px-4 py-2 rounded-xl text-sm hover:bg-slate-700 transition"
+          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-bold transition border border-slate-700"
         >
           ← Voltar ao Painel
         </Link>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-10 print:hidden">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+      <section className="max-w-7xl mx-auto px-6 py-10 no-print">
+        <div className="flex flex-col md:flex-row justify-between md:items-center mb-8 gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#0B192C]">Pipeline de Orçamentos</h1>
-            <p className="text-slate-600 text-sm">Gira propostas para potenciais clientes e converta-os em limpezas agendadas.</p>
+            <h1 className="text-3xl font-extrabold text-[#0B192C]">Propostas & Orçamentos</h1>
+            <p className="text-slate-500 text-sm mt-1">
+              Gere propostas comerciais com cálculo de margem interna, IVA e converta em agendamentos diretos.
+            </p>
           </div>
+
           <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-[#0B192C] text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-md hover:bg-slate-800 transition cursor-pointer"
+            onClick={() => setShowModal(true)}
+            className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-5 py-3 rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 border border-slate-700 text-xs"
           >
-            + Novo Orçamento
+            <span>+</span> Criar Novo Orçamento
           </button>
         </div>
 
         {/* Tabela de Orçamentos */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
-            {quotes.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 text-sm">
-                Nenhum orçamento registado de momento. Clica em <strong>"+ Novo Orçamento"</strong> para criar a primeira proposta.
-              </div>
-            ) : (
-              <table className="w-full text-left text-sm text-slate-600">
-                <thead className="bg-slate-50 text-xs uppercase font-bold text-slate-500 border-b border-slate-200">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th className="py-4 px-6">Cliente</th>
+                  <th className="py-4 px-6">Tipo & Tipologia</th>
+                  <th className="py-4 px-6">Frequência</th>
+                  <th className="py-4 px-6">Valor Total (c/ IVA)</th>
+                  <th className="py-4 px-6">Margem Lucro</th>
+                  <th className="py-4 px-6">Estado</th>
+                  <th className="py-4 px-6 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-sm">
+                {loading ? (
                   <tr>
-                    <th scope="col" className="px-6 py-4">Cliente / Contacto</th>
-                    <th scope="col" className="px-6 py-4">Serviço Pretendido</th>
-                    <th scope="col" className="px-6 py-4">Morada</th>
-                    <th scope="col" className="px-6 py-4">Valor Estimado (€)</th>
-                    <th scope="col" className="px-6 py-4">Estado</th>
-                    <th scope="col" className="px-6 py-4 text-right">Ações CRM</th>
+                    <td colSpan={7} className="text-center py-12 text-slate-400">A carregar propostas comerciais...</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {quotes.map((q) => {
-                    const cleanPhone = q.client_phone.replace(/\D/g, '')
-                    const waMsg = encodeURIComponent(`Olá ${q.client_name}! Apresentamos a proposta da R&R Services para ${q.service_type} no valor estimado de ${q.estimated_amount.toFixed(2)}€. Ficamos à disposição!`)
-
-                    return (
-                      <tr key={q.id} className="hover:bg-slate-50/80 transition">
-                        <td className="px-6 py-4">
-                          <p className="font-semibold text-[#0B192C]">{q.client_name}</p>
-                          <p className="text-xs text-slate-400">{q.client_phone}</p>
-                        </td>
-                        <td className="px-6 py-4 font-medium text-slate-800">{q.service_type}</td>
-                        <td className="px-6 py-4 text-xs text-slate-600 max-w-xs truncate">{q.address}</td>
-                        <td className="px-6 py-4 font-bold text-[#0B192C]">{q.estimated_amount.toFixed(2)} €</td>
-                        <td className="px-6 py-4">{getStatusBadge(q.status)}</td>
-                        <td className="px-6 py-4 text-right space-x-2">
+                ) : quotes.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center py-16 text-slate-400">
+                      Nenhum orçamento criado. Clique no botão acima para criar a primeira proposta.
+                    </td>
+                  </tr>
+                ) : (
+                  quotes.map((q) => (
+                    <tr key={q.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-4 px-6 font-bold text-[#0B192C]">
+                        {q.clients?.name || 'Cliente'}
+                        <div className="text-xs font-normal text-slate-400">{q.clients?.phone}</div>
+                      </td>
+                      <td className="py-4 px-6 text-slate-700 font-medium">
+                        {q.service_type}
+                        <span className="text-xs font-bold text-[#00D4FF] block">{q.typology}</span>
+                      </td>
+                      <td className="py-4 px-6 text-slate-600 text-xs font-medium">{q.frequency}</td>
+                      <td className="py-4 px-6 font-extrabold text-[#0B192C]">
+                        {Number(q.total || 0).toFixed(2)} €
+                      </td>
+                      <td className="py-4 px-6 font-bold text-emerald-600 text-xs">
+                        {q.margin_percentage || 0}%
+                      </td>
+                      <td className="py-4 px-6">
+                        <select
+                          value={q.status}
+                          onChange={(e) => handleUpdateQuoteStatus(q.id, e.target.value)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold outline-none cursor-pointer border shadow-sm ${
+                            q.status === 'approved'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : q.status === 'sent'
+                              ? 'bg-sky-50 text-sky-700 border-sky-200'
+                              : q.status === 'rejected'
+                              ? 'bg-red-50 text-red-700 border-red-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}
+                        >
+                          <option value="pending">Pendente</option>
+                          <option value="sent">Enviado</option>
+                          <option value="approved">Aprovado</option>
+                          <option value="rejected">Recusado</option>
+                        </select>
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <div className="flex justify-end gap-2">
                           <button
-                            onClick={() => setQuoteForPDF(q)}
-                            className="bg-slate-100 text-slate-800 border border-slate-300 px-2.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-200 transition inline-block cursor-pointer"
+                            onClick={() => setViewingQuote(q)}
+                            className="bg-slate-100 hover:bg-[#00D4FF]/10 hover:text-[#0B192C] text-slate-700 font-bold px-3 py-1.5 rounded-lg border border-slate-200 text-xs transition cursor-pointer flex items-center gap-1"
                           >
-                            📄 Gerar PDF
+                            👁️ Ver PDF
                           </button>
-
-                          <a
-                            href={`https://wa.me/${cleanPhone}?text=${waMsg}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => handleUpdateStatus(q.id, 'sent')}
-                            className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition inline-block"
-                          >
-                            💬 WhatsApp
-                          </a>
-
-                          {q.status !== 'approved' && (
-                            <button
-                              onClick={() => handleConvertToService(q)}
-                              className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-blue-100 transition inline-block cursor-pointer"
-                            >
-                              ⚡ Converter
-                            </button>
-                          )}
-
                           <button
-                            onClick={() => handleDeleteQuote(q.id)}
-                            className="text-rose-600 hover:underline font-semibold text-xs cursor-pointer ml-1"
+                            onClick={() => handleConvertToOrder(q)}
+                            className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer"
                           >
-                            Apagar
+                            ⚡ Agendar
                           </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      </main>
+      </section>
 
-      {/* Modal / Criar Novo Orçamento */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-50 print:hidden">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
-            <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
-              <h3 className="text-lg font-bold text-[#0B192C]">Criar Nova Proposta de Orçamento</h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {errorMsg && (
-              <div className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-xl border border-red-200 font-mono break-all">
-                {errorMsg}
-              </div>
-            )}
-
-            <form onSubmit={handleCreateQuote} className="space-y-4">
-              {clients.length > 0 && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                    Selecionar Cliente Existente <span className="text-slate-400 font-normal lowercase">(opcional)</span>
-                  </label>
-                  <select
-                    value={selectedClientId}
-                    onChange={(e) => handleClientSelect(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] text-sm text-slate-800 bg-slate-50"
-                  >
-                    <option value="">-- Novo Potencial Cliente (Leads) --</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.phone})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                    Nome do Cliente / Empresa *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: Roberta"
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] text-sm text-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                    Telefone *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="+351 969 177 571"
-                    value={clientPhone}
-                    onChange={(e) => setClientPhone(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] text-sm text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                  Tipo de Serviço
-                </label>
-                <select
-                  value={serviceType}
-                  onChange={(e) => setServiceType(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] text-sm text-slate-800"
-                >
-                  <option value="Higienização de Estofos & Sofás">Higienização de Estofos & Sofás</option>
-                  <option value="Limpeza Residencial Recorrente">Limpeza Residencial Recorrente</option>
-                  <option value="Limpeza Profunda (Geral)">Limpeza Profunda (Geral)</option>
-                  <option value="Limpeza Pós-Obras">Limpeza Pós-Obras</option>
-                  <option value="Limpeza de Vidros & Sacadas">Limpeza de Vidros & Sacadas</option>
-                  <option value="Limpeza Comercial / Escritórios">Limpeza Comercial / Escritórios</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                    Morada / Local
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: Moita"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] text-sm text-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                    Valor (€)
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={estimatedAmount}
-                    onChange={(e) => setEstimatedAmount(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] text-sm text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                  Observações / Lista de Itens <span className="text-slate-400 font-normal lowercase">(opcional)</span>
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Ex: 1 - sofá, 1 - colchão solteiro, 1 - tapete..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] text-sm text-slate-800"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+      {/* MODAL / FOLHA FORMAL DE PROPOSTA COMERCIAL E GERADOR PDF */}
+      {viewingQuote && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+            {/* AÇÕES NO TOPO */}
+            <div className="flex justify-between items-center mb-6 no-print border-b border-slate-100 pb-4">
+              <span className="text-xs font-bold text-slate-400 uppercase">Proposta Comercial Formal</span>
+              <div className="flex gap-2">
                 <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-medium text-xs hover:bg-slate-50 transition cursor-pointer"
+                  onClick={handlePrintPDF}
+                  className="bg-[#0B192C] hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md cursor-pointer"
                 >
-                  Cancelar
+                  📄 Imprimir / Guardar em PDF
                 </button>
                 <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2.5 rounded-xl bg-[#0B192C] text-white font-semibold text-xs hover:bg-slate-800 transition disabled:opacity-50 cursor-pointer"
-                >
-                  {submitting ? 'A criar...' : 'Gerar Orçamento'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal / Modelo PDF de Proposta */}
-      {quoteForPDF && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex justify-center items-center p-4 z-50 print:p-0 print:bg-white print:static print:inset-auto">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 print:shadow-none print:border-none print:w-full print:max-w-none">
-            {/* Botões do Modal */}
-            <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100 print:hidden">
-              <h3 className="text-lg font-bold text-[#0B192C]">Proposta Pronta para Guardar / Imprimir</h3>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => window.print()}
-                  className="bg-[#0B192C] text-white px-4 py-2 rounded-xl text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
-                >
-                  🖨️ Guardar PDF / Imprimir
-                </button>
-                <button
-                  onClick={() => setQuoteForPDF(null)}
-                  className="bg-slate-100 text-slate-600 px-3 py-2 rounded-xl text-xs font-bold hover:bg-slate-200 transition cursor-pointer"
+                  onClick={closeModal}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
                 >
                   ✕ Fechar
                 </button>
               </div>
             </div>
 
-            {/* DOCUMENTO PDF DE PROPOSTA */}
-            <div className="p-4 border border-slate-200 rounded-xl bg-white space-y-6">
-              <div className="flex justify-between items-start border-b border-slate-200 pb-4">
+            {/* ÁREA FORMAL IMPRESSA (PDF) */}
+            <div id="print-area" className="p-6 bg-white text-[#0B192C] space-y-6 rounded-2xl border border-slate-200">
+              {/* CABEÇALHO DO DOCUMENTO */}
+              <div className="flex justify-between items-start border-b border-slate-200 pb-6">
                 <div>
-                  <h1 className="text-2xl font-bold text-[#0B192C]">R&R Services</h1>
-                  <p className="text-xs text-slate-500 mt-1">Serviços Profissionais de Limpeza & Higienização</p>
-                  <p className="text-xs text-slate-500">contacto@rrservices.pt | Setúbal & Lisboa</p>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="text-2xl font-black text-[#00D4FF] bg-[#0B192C] px-3 py-1 rounded-xl">R&R</span>
+                    <span className="text-xl font-bold text-[#0B192C]">Services</span>
+                  </div>
+                  <p className="text-xs text-slate-500">Serviços Profissionais de Limpeza & Manutenção</p>
+                  <p className="text-xs text-slate-500">Portugal | Contacto: +351 969 177 571</p>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs font-bold text-slate-400 uppercase block">Proposta de Orçamento</span>
-                  <span className="text-sm font-semibold text-[#00D4FF]">#ORC-{quoteForPDF.id.substring(0, 6).toUpperCase()}</span>
-                  <p className="text-xs text-slate-500 mt-1">Data: {new Date(quoteForPDF.created_at).toLocaleDateString('pt-PT')}</p>
+                  <h3 className="text-lg font-black text-[#0B192C] uppercase">Orçamento</h3>
+                  <p className="text-xs font-bold text-[#00D4FF]">#{viewingQuote.id.substring(0, 8).toUpperCase()}</p>
+                  <p className="text-xs text-slate-400 mt-1">Data: {new Date(viewingQuote.created_at).toLocaleDateString('pt-PT')}</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
-                <div>
-                  <span className="font-bold text-slate-400 uppercase block mb-1">Dados do Cliente</span>
-                  <p className="font-bold text-[#0B192C] text-sm">{quoteForPDF.client_name}</p>
-                  <p className="text-slate-600 mt-0.5">Contacto: {quoteForPDF.client_phone}</p>
-                  <p className="text-slate-600">Localização: {quoteForPDF.address}</p>
-                </div>
-                <div>
-                  <span className="font-bold text-slate-400 uppercase block mb-1">Serviço Pretendido</span>
-                  <p className="font-bold text-[#0B192C] text-sm">{quoteForPDF.service_type}</p>
-                  <p className="text-slate-600 mt-0.5">Validade da Proposta: 15 dias</p>
-                </div>
+              {/* DADOS DO CLIENTE */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase block mb-1">Cliente Destinatário</span>
+                <p className="text-sm font-bold text-[#0B192C]">{viewingQuote.clients?.name || 'Cliente'}</p>
+                <p className="text-xs text-slate-600">📞 {viewingQuote.clients?.phone}</p>
+                <p className="text-xs text-slate-600">✉️ {viewingQuote.clients?.email}</p>
+                {viewingQuote.clients?.address && (
+                  <p className="text-xs text-slate-600 mt-1">📍 Morada: {viewingQuote.clients.address}</p>
+                )}
               </div>
 
-              {quoteForPDF.notes && (
-                <div>
-                  <span className="text-xs font-bold text-slate-400 uppercase block mb-2">Descrição dos Itens / Observações</span>
-                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-700 whitespace-pre-line leading-relaxed">
-                    {quoteForPDF.notes}
+              {/* DETALHES DO SERVIÇO */}
+              <div>
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#0B192C] text-white font-bold uppercase text-[10px]">
+                      <th className="py-3 px-4 rounded-l-xl">Descrição do Serviço</th>
+                      <th className="py-3 px-4">Tipologia</th>
+                      <th className="py-3 px-4">Frequência</th>
+                      <th className="py-3 px-4 text-right rounded-r-xl">Valor Base</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    <tr>
+                      <td className="py-4 px-4 font-bold text-[#0B192C]">{viewingQuote.service_type}</td>
+                      <td className="py-4 px-4 font-medium text-slate-700">{viewingQuote.typology || 'T2'}</td>
+                      <td className="py-4 px-4 font-medium text-slate-700">{viewingQuote.frequency || 'Pontual'}</td>
+                      <td className="py-4 px-4 font-bold text-[#0B192C] text-right">{Number(viewingQuote.subtotal || 0).toFixed(2)} €</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* RESUMO DE VALORES */}
+              <div className="flex justify-end pt-2">
+                <div className="w-64 space-y-2 text-xs">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Subtotal:</span>
+                    <span className="font-bold">{Number(viewingQuote.subtotal || 0).toFixed(2)} €</span>
                   </div>
+                  {Number(viewingQuote.discount || 0) > 0 && (
+                    <div className="flex justify-between text-red-600 font-semibold">
+                      <span>Desconto Especial:</span>
+                      <span>- {Number(viewingQuote.discount).toFixed(2)} €</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-slate-600">
+                    <span>IVA ({viewingQuote.vat_rate || 23}%):</span>
+                    <span className="font-bold">
+                      {(((Number(viewingQuote.subtotal || 0) - Number(viewingQuote.discount || 0)) * (viewingQuote.vat_rate || 23)) / 100).toFixed(2)} €
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm font-black text-[#0B192C] border-t border-slate-300 pt-2">
+                    <span>Total da Proposta:</span>
+                    <span className="text-[#00D4FF] bg-[#0B192C] px-2 py-0.5 rounded-lg">{Number(viewingQuote.total || 0).toFixed(2)} €</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* CONDIÇÕES E NOTAS */}
+              {viewingQuote.notes && (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+                  <span className="font-bold text-slate-700 block mb-1">Condições da Proposta & Observações:</span>
+                  <p className="text-slate-600 italic">{viewingQuote.notes}</p>
                 </div>
               )}
 
-              <div className="border-t border-slate-200 pt-4 flex justify-between items-center">
-                <span className="text-xs text-slate-500">Obrigado pela preferência nos serviços da R&R Services!</span>
-                <div className="text-right">
-                  <span className="text-xs font-bold text-slate-400 uppercase block">Valor Total Estimado</span>
-                  <span className="text-2xl font-bold text-[#0B192C]">{quoteForPDF.estimated_amount.toFixed(2)} €</span>
-                </div>
+              {/* RODAPÉ DO DOCUMENTO */}
+              <div className="border-t border-slate-200 pt-4 text-center text-[10px] text-slate-400">
+                Proposta válida até {viewingQuote.valid_until ? new Date(viewingQuote.valid_until).toLocaleDateString('pt-PT') : '30 dias'}. Obrigado pela confiança na R&R Services!
               </div>
             </div>
           </div>
         </div>
       )}
-    </div>
+
+      {/* MODAL PARA CRIAR NOVO ORÇAMENTO */}
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-[#0B192C]">Criar Nova Proposta Comercial</h2>
+                <p className="text-xs text-slate-500 mt-1">Defina os valores do serviço e analise a margem de lucro interna.</p>
+              </div>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleCreateQuote} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Cliente *</label>
+                <select
+                  required
+                  value={selectedClientId}
+                  onChange={(e) => setSelectedClientId(e.target.value)}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium"
+                >
+                  <option value="">Selecione um cliente...</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tipo de Serviço</label>
+                  <select
+                    value={serviceType}
+                    onChange={(e) => setServiceType(e.target.value)}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium"
+                  >
+                    <option value="Limpeza Residencial">Limpeza Residencial</option>
+                    <option value="Limpeza Profunda">Limpeza Profunda</option>
+                    <option value="Pós-Obra">Pós-Obra</option>
+                    <option value="Escritórios & Comercial">Escritórios & Comercial</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tipologia</label>
+                  <input
+                    type="text"
+                    value={typology}
+                    onChange={(e) => setTypology(e.target.value)}
+                    placeholder="Ex: T2, T3"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Frequência</label>
+                  <select
+                    value={frequency}
+                    onChange={(e) => setFrequency(e.target.value)}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium"
+                  >
+                    <option value="Pontual">Pontual</option>
+                    <option value="Semanal">Semanal</option>
+                    <option value="Quinzenal">Quinzenal</option>
+                    <option value="Mensal">Mensal</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cálculo Financeiro & Custos Internos</h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Preço Base (€) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={subtotal}
+                      onChange={(e) => setSubtotal(e.target.value)}
+                      placeholder="Ex: 100.00"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-sm font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Desconto (€)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={discount}
+                      onChange={(e) => setDiscount(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-sm font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Taxa IVA (%)</label>
+                    <input
+                      type="number"
+                      value={vatRate}
+                      onChange={(e) => setVatRate(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-sm font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-200 pt-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Custo Estimado Interno (€)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={estimatedCost}
+                      onChange={(e) => setEstimatedCost(e.target.value)}
+                      placeholder="Ex: 40.00"
+                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-sm font-bold"
+                    />
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Margem Bruta</span>
+                      <span className="text-lg font-extrabold text-emerald-600">{profitMargin}%</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Total c/ IVA</span>
+                      <span className="text-lg font-extrabold text-[#0B192C]">{totalVal.toFixed(2)} €</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Condições & Observações</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Inclui produtos e equipamentos..."
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium h-20"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="px-5 py-3 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold text-sm transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-7 py-3 bg-[#0B192C] hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
+                >
+                  {submitting ? 'A guardar...' : 'Gerar Proposta Comercial'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </main>
   )
 }

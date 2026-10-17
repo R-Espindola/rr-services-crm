@@ -1,268 +1,589 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
-interface ServiceExtra {
-  id: string
-  name: string
-  price: number
-  selected: boolean
-}
-
-export default function PortalClientePage() {
-  const [phoneInput, setPhoneInput] = useState('')
-  const [loading, setLoading] = useState(false)
+export default function ClientDashboardPage() {
+  const [loading, setLoading] = useState(true)
   const [clientData, setClientData] = useState<any>(null)
-  const [activeOrders, setActiveOrders] = useState<any[]>([])
-  const [searched, setSearched] = useState(false)
+  
+  // Categorização Separada
+  const [nextRegularCleaning, setNextRegularCleaning] = useState<any | null>(null)
+  const [extraServiceRequests, setExtraServiceRequests] = useState<any[]>([])
+  const [recommendedProducts, setRecommendedProducts] = useState<any[]>([])
+  const [completedHistory, setCompletedHistory] = useState<any[]>([])
+  const [catalogExtras, setCatalogExtras] = useState<any[]>([])
 
-  // Extras disponíveis para o cliente selecionar
-  const [extras, setExtras] = useState<ServiceExtra[]>([
-    { id: 'forno', name: 'Limpeza Interior de Forno / Micro-ondas', price: 15, selected: false },
-    { id: 'frigorifico', name: 'Limpeza e Desinfeção de Frigorífico', price: 15, selected: false },
-    { id: 'janelas', name: 'Limpeza Integral de Vidros & Sacada', price: 25, selected: false },
-    { id: 'passar_ferro', name: 'Tratamento de Roupa / Passar a Ferro (1h)', price: 18, selected: false },
-    { id: 'colchao', name: 'Higienização Extra de Colchão Solteiro/Casal', price: 30, selected: false },
-  ])
+  // Estado do formulário de Seleção Múltipla de Extras
+  const [selectedExtras, setSelectedExtras] = useState<{ [key: string]: number }>({})
+  const [extraNotes, setExtraNotes] = useState('')
+  const [submittingExtra, setSubmittingExtra] = useState(false)
+  const [extraSuccessMsg, setExtraSuccessMsg] = useState('')
 
-  const [savingExtras, setSavingExtras] = useState(false)
-  const [saveSuccess, setSaveSuccess] = useState(false)
+  // Modal de Fotos Antes & Depois
+  const [selectedPhotos, setSelectedPhotos] = useState<{ before: string[]; after: string[]; title: string } | null>(null)
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const router = useRouter()
+
+  useEffect(() => {
+    loadDashboardData()
+  }, [])
+
+  async function loadDashboardData() {
     setLoading(true)
-    setSearched(true)
-    setSaveSuccess(false)
 
-    const cleanPhone = phoneInput.replace(/\D/g, '')
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      router.push('/login')
+      return
+    }
 
-    // Procurar cliente pelo telefone
-    const { data: clients } = await supabase
+    // 1. Obter dados do Cliente
+    const { data: client } = await supabase
       .from('clients')
       .select('*')
+      .eq('email', session.user.email)
+      .single()
 
-    const foundClient = clients?.find((c) => c.phone.replace(/\D/g, '').includes(cleanPhone))
+    if (client) {
+      setClientData(client)
 
-    if (foundClient) {
-      setClientData(foundClient)
-
-      // Procurar serviços agendados deste cliente
+      // 2. Carregar todas as ordens deste cliente
       const { data: orders } = await supabase
         .from('orders')
         .select('*')
-        .eq('client_id', foundClient.id)
-        .order('scheduled_date', { ascending: false })
+        .eq('client_id', client.id)
+        .order('scheduled_date', { ascending: true })
 
-      if (orders) setActiveOrders(orders)
+      if (orders) {
+        // Separar limpezas regulares de pedidos de serviços extra
+        const regularCleanings = orders.filter(
+          o => !o.service_type?.toLowerCase().startsWith('extra:') && o.status !== 'completed' && o.status !== 'cancelled'
+        )
+
+        const extraRequests = orders.filter(
+          o => o.service_type?.toLowerCase().startsWith('extra:') || o.notes?.toLowerCase().includes('pedido de serviço extra')
+        )
+
+        const history = orders.filter(o => o.status === 'completed')
+
+        if (regularCleanings.length > 0) {
+          setNextRegularCleaning(regularCleanings[0])
+        } else {
+          setNextRegularCleaning(null)
+        }
+
+        setExtraServiceRequests(extraRequests)
+        setCompletedHistory(history)
+      }
     } else {
-      setClientData(null)
-      setActiveOrders([])
+      setClientData({ name: session.user.email?.split('@')[0] || 'Cliente' })
     }
+
+    // 3. Carregar Catálogo de Serviços Extra
+    const { data: extrasData } = await supabase
+      .from('services_catalog')
+      .select('*')
+      .eq('is_available', true)
+
+    if (extrasData) {
+      setCatalogExtras(extrasData)
+    }
+
+    // 4. Carregar Produtos Recomendados da Loja
+    const { data: productsData } = await supabase
+      .from('products')
+      .select('*')
+      .limit(4)
+
+    if (productsData) {
+      setRecommendedProducts(productsData)
+    }
+
     setLoading(false)
   }
 
-  const toggleExtra = (id: string) => {
-    setExtras(extras.map(item => item.id === id ? { ...item, selected: !item.selected } : item))
+  // Formatação Limpa de Data e Hora
+  function formatDate(dateString: string) {
+    if (!dateString) return 'Data a definir'
+    const d = new Date(dateString)
+    const day = String(d.getDate()).padStart(2, '0')
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const year = d.getFullYear()
+    return `${day}/${month}/${year}`
   }
 
-  const handleSaveChecklist = async (orderId: string, currentTotal: number) => {
-    setSavingExtras(true)
-    const selectedExtras = extras.filter(e => e.selected)
-    const extraCost = selectedExtras.reduce((sum, item) => sum + item.price, 0)
-    const newTotal = currentTotal + extraCost
+  function formatTime(dateString: string) {
+    if (!dateString) return ''
+    const d = new Date(dateString)
+    const hours = String(d.getHours()).padStart(2, '0')
+    const minutes = String(d.getMinutes()).padStart(2, '0')
+    return `${hours}:${minutes}`
+  }
 
-    const { error } = await supabase
-      .from('orders')
-      .update({
-        custom_checklist: selectedExtras,
-        total_amount: newTotal
-      })
-      .eq('id', orderId)
-
-    setSavingExtras(false)
-    if (!error) {
-      setSaveSuccess(true)
-      setTimeout(() => setSaveSuccess(false), 4000)
+  // Mapeamento de Estados Reais da Base de Dados
+  function renderStatusBadge(status: string) {
+    switch (status) {
+      case 'pending':
+        return <span className="bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1 rounded-full text-xs font-bold">A aguardar confirmação</span>
+      case 'confirmed':
+        return <span className="bg-sky-50 text-sky-700 border border-sky-200 px-3 py-1 rounded-full text-xs font-bold">Confirmado</span>
+      case 'in_progress':
+        return <span className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full text-xs font-bold">Em execução</span>
+      case 'completed':
+        return <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full text-xs font-bold">Concluído</span>
+      case 'cancelled':
+        return <span className="bg-red-50 text-red-700 border border-red-200 px-3 py-1 rounded-full text-xs font-bold">Cancelado</span>
+      default:
+        return <span className="bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1 rounded-full text-xs font-bold">Pedido recebido</span>
     }
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-[#0B192C]">
-      {/* Cabeçalho */}
-      <header className="bg-[#0B192C] text-white py-5 px-6 shadow-lg flex justify-between items-center">
+  // Gestão da Seleção Múltipla de Extras
+  function handleQuantityChange(serviceId: string, delta: number) {
+    setSelectedExtras((prev) => {
+      const current = prev[serviceId] || 0
+      const updated = Math.max(0, current + delta)
+      if (updated === 0) {
+        const copy = { ...prev }
+        delete copy[serviceId]
+        return copy
+      }
+      return { ...prev, [serviceId]: updated }
+    })
+  }
+
+  // Envio do Pedido de Serviços Extra
+  async function handleSubmitExtraOrder(e: React.FormEvent) {
+    e.preventDefault()
+    const selectedKeys = Object.keys(selectedExtras)
+    if (selectedKeys.length === 0) {
+      alert('Por favor, selecione pelo menos um serviço extra.')
+      return
+    }
+
+    setSubmittingExtra(true)
+
+    let totalAmount = 0
+    const summaryList: string[] = []
+
+    selectedKeys.forEach((id) => {
+      const item = catalogExtras.find((s) => s.id === id)
+      if (item) {
+        const qty = selectedExtras[id]
+        totalAmount += (item.price || 0) * qty
+        summaryList.push(`${item.name} (${qty}x)`)
+      }
+    })
+
+    const serviceTitle = `Extra: ${summaryList.join(', ')}`
+
+    const { error } = await supabase.from('orders').insert([
+      {
+        client_id: clientData.id,
+        service_type: serviceTitle,
+        scheduled_date: new Date().toISOString(),
+        total_amount: totalAmount,
+        status: 'pending',
+        notes: extraNotes ? `Pedido de Serviço Extra: ${extraNotes}` : 'Pedido de Serviço Extra',
+      },
+    ])
+
+    if (error) {
+      alert('Erro ao enviar pedido: ' + error.message)
+    } else {
+      setExtraSuccessMsg('O seu pedido de serviços extra foi enviado com sucesso! A equipa irá analisar e confirmar brevemente.')
+      setSelectedExtras({})
+      setExtraNotes('')
+      loadDashboardData()
+      setTimeout(() => setExtraSuccessMsg(''), 6000)
+    }
+    setSubmittingExtra(false)
+  }
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-[#0B192C]">
         <div className="flex items-center space-x-3">
-          <span className="text-2xl font-bold text-[#00D4FF]">R&R</span>
-          <span className="text-lg font-medium text-slate-200">Services — Portal do Cliente</span>
+          <div className="w-4 h-4 rounded-full bg-[#00D4FF] animate-ping" />
+          <p className="text-sm font-semibold">A carregar o seu portal R&R Services...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-50 text-[#0B192C]">
+      {/* 1. CABEÇALHO */}
+      <header className="bg-[#0B192C] text-white py-4 px-6 md:px-10 shadow-lg flex justify-between items-center border-b border-slate-800">
+        <div className="flex items-center space-x-3">
+          <div className="bg-[#00D4FF]/10 p-2 rounded-xl border border-[#00D4FF]/20">
+            <span className="text-2xl font-bold tracking-wider text-[#00D4FF]">R&R</span>
+          </div>
+          <div>
+            <span className="text-lg font-bold text-white block leading-none">Services</span>
+            <span className="text-[11px] text-[#00D4FF] font-medium">Portal do Cliente</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-300 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
+            <span>🔔 Notificações</span>
+            <span className="w-2 h-2 rounded-full bg-[#00D4FF]" />
+          </div>
+          <button
+            onClick={handleLogout}
+            className="bg-slate-800 hover:bg-red-600/20 text-slate-300 hover:text-red-200 px-4 py-2 rounded-xl text-xs font-bold transition border border-slate-700 cursor-pointer"
+          >
+            Terminar Sessão
+          </button>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
-        {/* Pesquisa por Telemóvel */}
-        {!clientData && (
-          <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 text-center max-w-md mx-auto my-10">
-            <span className="text-4xl mb-4 block">✨</span>
-            <h1 className="text-xl font-bold text-[#0B192C] mb-2">Área Exclusiva do Cliente</h1>
-            <p className="text-xs text-slate-500 mb-6">Insira o seu número de telemóvel para visualizar os seus agendamentos, fotos de trabalhos realizados e personalizar os seus serviços.</p>
+      <section className="max-w-6xl mx-auto px-6 py-10 space-y-10">
+        {/* 2. SAUDAÇÃO PERSONALIZADA */}
+        <div>
+          <h1 className="text-3xl font-extrabold text-[#0B192C]">Olá, {clientData?.name} 👋</h1>
+          <p className="text-slate-500 text-sm mt-1">
+            Gira as suas limpezas contratadas, adicione serviços extra e acompanhe os seus pedidos.
+          </p>
+        </div>
 
-            <form onSubmit={handleSearch} className="space-y-4">
-              <input
-                type="text"
-                required
-                placeholder="Ex: 912 000 000"
-                value={phoneInput}
-                onChange={(e) => setPhoneInput(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] text-center font-semibold text-slate-800 text-base"
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-[#0B192C] text-white py-3 rounded-xl font-semibold text-sm hover:bg-slate-800 transition cursor-pointer"
-              >
-                {loading ? 'A procurar...' : 'Aceder ao Meu Espaço'}
-              </button>
-            </form>
-
-            {searched && !clientData && !loading && (
-              <p className="text-xs text-rose-500 mt-4">Nenhum registo encontrado com este contacto. Verifique o número digitado.</p>
-            )}
-          </div>
-        )}
-
-        {/* Conteúdo do Cliente */}
-        {clientData && (
-          <div className="space-y-8">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center">
-              <div>
-                <span className="text-xs font-bold text-[#00D4FF] uppercase tracking-wider block">Bem-vindo(a)</span>
-                <h2 className="text-2xl font-bold text-[#0B192C]">{clientData.name}</h2>
-                <p className="text-xs text-slate-500 mt-0.5">📍 {clientData.address}</p>
-              </div>
-              <button
-                onClick={() => { setClientData(null); setPhoneInput('') }}
-                className="text-xs text-slate-400 hover:text-slate-600 underline cursor-pointer"
-              >
-                Sair
-              </button>
+        {/* 3. CARTÃO DA PRÓXIMA LIMPEZA CONTRATADA */}
+        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm relative overflow-hidden">
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <span className="text-[11px] font-extrabold uppercase px-3 py-1 rounded-full bg-[#00D4FF]/10 text-[#0B192C] border border-[#00D4FF]/20">
+                Limpeza Contratada em Destaque
+              </span>
+              <h2 className="text-2xl font-extrabold text-[#0B192C] mt-3">
+                {nextRegularCleaning ? nextRegularCleaning.service_type : 'Nenhuma Limpeza Regular Agendada'}
+              </h2>
             </div>
+            {nextRegularCleaning && renderStatusBadge(nextRegularCleaning.status)}
+          </div>
 
-            {/* Agendamentos do Cliente */}
-            <h3 className="text-lg font-bold text-[#0B192C]">Os Seus Serviços & Histórico</h3>
-
-            {activeOrders.length === 0 ? (
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 text-center text-slate-500 text-sm">
-                Não existem agendamentos ativos ou anteriores registados.
+          {nextRegularCleaning ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50/70 p-5 rounded-2xl border border-slate-100">
+              <div>
+                <span className="text-xs font-bold text-slate-400 uppercase block">Data Prevista</span>
+                <span className="text-lg font-bold text-[#0B192C]">
+                  📅 {formatDate(nextRegularCleaning.scheduled_date)}
+                </span>
               </div>
-            ) : (
-              activeOrders.map((order) => (
-                <div key={order.id} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-6">
-                  {/* Informações Principais */}
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-4">
+              <div>
+                <span className="text-xs font-bold text-slate-400 uppercase block">Horário da Intervenção</span>
+                <span className="text-lg font-bold text-[#0B192C]">
+                  ⏰ {formatTime(nextRegularCleaning.scheduled_date)}
+                </span>
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-400 uppercase block">Valor Contratado</span>
+                <span className="text-lg font-extrabold text-[#00D4FF]">
+                  {Number(nextRegularCleaning.total_amount).toFixed(2)} €
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 bg-slate-50 p-4 rounded-xl border border-dashed border-slate-200">
+              Não tem nenhuma intervenção regular agendada para os próximos dias.
+            </p>
+          )}
+        </div>
+
+        {/* 4. PERSONALIZAR A PRÓXIMA LIMPEZA COM SERVIÇOS EXTRA */}
+        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+          <div className="mb-6">
+            <h2 className="text-2xl font-extrabold text-[#0B192C]">Personalizar Limpeza — Serviços Extra</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Selecione intervenções adicionais pontuais (ex: forno, vidros, sofás). Os pedidos ficam sujeitos a confirmação da R&R Services sem alterar a sua intervenção principal.
+            </p>
+          </div>
+
+          {extraSuccessMsg && (
+            <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold">
+              ✓ {extraSuccessMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmitExtraOrder} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {catalogExtras.map((item) => {
+                const qty = selectedExtras[item.id] || 0
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-5 rounded-2xl border transition flex flex-col justify-between ${
+                      qty > 0 ? 'border-[#00D4FF] bg-[#00D4FF]/5 shadow-sm' : 'border-slate-200 bg-slate-50/40 hover:bg-white'
+                    }`}
+                  >
                     <div>
-                      <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">
-                        {order.status === 'completed' ? '🟢 Concluído' : '🟡 Agendado'}
-                      </span>
-                      <h4 className="text-lg font-bold text-[#0B192C] mt-2">{order.service_type}</h4>
-                      <p className="text-xs text-slate-500">
-                        Data: <strong>{new Date(order.scheduled_date).toLocaleDateString('pt-PT')}</strong>
-                      </p>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">{item.category}</span>
+                        <span className="text-sm font-extrabold text-[#0B192C]">
+                          {item.price_type === 'quote' ? 'Sob Orçamento' : `${Number(item.price).toFixed(2)} €`}
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-[#0B192C] text-base mb-1">{item.name}</h4>
+                      <p className="text-xs text-slate-500 line-clamp-2 mb-4">{item.description || 'Intervenção complementar dedicada.'}</p>
                     </div>
-                    <div className="text-right">
-                      <span className="text-xs text-slate-400 uppercase block">Valor Total</span>
-                      <span className="text-xl font-bold text-[#0B192C]">{order.total_amount?.toFixed(2) || '0.00'} €</span>
-                    </div>
-                  </div>
 
-                  {/* GALERIA DE FOTOS ANTES & DEPOIS */}
-                  <div className="space-y-3">
-                    <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider">📸 Galeria de Transformação (Antes & Depois)</h5>
-                    
-                    {(!order.photos_before || order.photos_before.length === 0) && (!order.photos_after || order.photos_after.length === 0) ? (
-                      <div className="bg-slate-50 p-4 rounded-xl text-center text-xs text-slate-400 border border-slate-100">
-                        As fotografias do serviço serão disponibilizadas assim que a equipa concluir a intervenção.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Antes */}
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                          <span className="text-xs font-bold text-rose-600 block mb-2">🔴 Antes do Serviço</span>
-                          <div className="grid grid-cols-2 gap-2">
-                            {order.photos_before?.map((url: string, idx: number) => (
-                              <img key={idx} src={url} alt="Antes" className="w-full h-28 object-cover rounded-lg border border-slate-200" />
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Depois */}
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                          <span className="text-xs font-bold text-emerald-600 block mb-2">🟢 Depois da Higienização</span>
-                          <div className="grid grid-cols-2 gap-2">
-                            {order.photos_after?.map((url: string, idx: number) => (
-                              <img key={idx} src={url} alt="Depois" className="w-full h-28 object-cover rounded-lg border border-slate-200" />
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* CHECKLIST E SELEÇÃO DE EXTRAS (Apenas para serviços pendentes/agendados) */}
-                  {order.status !== 'completed' && (
-                    <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-4">
-                      <div className="flex justify-between items-center">
-                        <h5 className="text-xs font-bold text-[#0B192C] uppercase tracking-wider">
-                          ✨ Personalizar Tarefas & Adicionar Extras para este dia
-                        </h5>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {extras.map((extra) => (
-                          <label
-                            key={extra.id}
-                            onClick={() => toggleExtra(extra.id)}
-                            className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition ${
-                              extra.selected
-                                ? 'bg-blue-50/80 border-[#00D4FF] text-[#0B192C]'
-                                : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-center space-x-3">
-                              <input
-                                type="checkbox"
-                                checked={extra.selected}
-                                onChange={() => {}}
-                                className="w-4 h-4 text-[#00D4FF] rounded"
-                              />
-                              <span className="text-xs font-medium">{extra.name}</span>
-                            </div>
-                            <span className="text-xs font-bold text-[#0B192C]">+{extra.price}€</span>
-                          </label>
-                        ))}
-                      </div>
-
-                      {saveSuccess && (
-                        <p className="text-xs text-emerald-600 font-semibold text-center">
-                          ✅ Extras e checklist atualizados com sucesso para a sua próxima limpeza!
-                        </p>
-                      )}
-
-                      <div className="flex justify-end pt-2">
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                      <span className="text-xs font-semibold text-slate-600">Quantidade:</span>
+                      <div className="flex items-center space-x-2">
                         <button
-                          onClick={() => handleSaveChecklist(order.id, order.total_amount)}
-                          disabled={savingExtras}
-                          className="bg-[#0B192C] text-white px-5 py-2.5 rounded-xl text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+                          type="button"
+                          onClick={() => handleQuantityChange(item.id, -1)}
+                          className="w-7 h-7 rounded-lg bg-slate-200 hover:bg-slate-300 font-bold text-slate-700 text-sm transition"
                         >
-                          {savingExtras ? 'A guardar...' : 'Confirmar Extras para este Serviço'}
+                          -
+                        </button>
+                        <span className="text-sm font-extrabold w-5 text-center text-[#0B192C]">{qty}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleQuantityChange(item.id, 1)}
+                          className="w-7 h-7 rounded-lg bg-[#0B192C] hover:bg-slate-800 font-bold text-white text-sm transition"
+                        >
+                          +
                         </button>
                       </div>
                     </div>
-                  )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Observações & Resumo */}
+            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Observações para a Equipa</label>
+                <textarea
+                  value={extraNotes}
+                  onChange={(e) => setExtraNotes(e.target.value)}
+                  placeholder="Ex: Dar atenção especial ao forno da cozinha ou higienização do sofá da sala."
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-sm h-20"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-2 border-t border-slate-200">
+                <div className="text-sm">
+                  <span className="text-slate-500 font-medium">Resumo de Extras Selecionados: </span>
+                  <span className="font-extrabold text-[#0B192C] text-lg">
+                    {Object.keys(selectedExtras).length} item(ns)
+                  </span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submittingExtra || Object.keys(selectedExtras).length === 0}
+                  className="w-full sm:w-auto px-8 py-3 bg-[#0B192C] hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-40 cursor-pointer"
+                >
+                  {submittingExtra ? 'A enviar pedido...' : 'Enviar Pedido de Serviços Extra'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        {/* 5. PRODUTOS RECOMENDADOS DA LOJA */}
+        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h2 className="text-2xl font-extrabold text-[#0B192C]">Produtos Recomendados</h2>
+              <p className="text-xs text-slate-500 mt-1">Detergentes e produtos de limpeza de gama profissional.</p>
+            </div>
+            <Link href="/cliente/loja" className="text-xs font-bold text-[#00D4FF] hover:underline">
+              Ver Loja Completa →
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {recommendedProducts.length === 0 ? (
+              <p className="col-span-4 text-xs text-slate-400 py-6 text-center">Nenhum produto disponível na loja de momento.</p>
+            ) : (
+              recommendedProducts.map((prod) => (
+                <div key={prod.id} className="bg-slate-50/60 p-4 rounded-2xl border border-slate-200 flex flex-col justify-between">
+                  <div>
+                    <div className="w-full h-32 bg-slate-200 rounded-xl mb-3 flex items-center justify-center text-3xl overflow-hidden">
+                      {prod.image_url ? (
+                        <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover" />
+                      ) : (
+                        '🧴'
+                      )}
+                    </div>
+                    <h4 className="font-bold text-[#0B192C] text-sm mb-1">{prod.name}</h4>
+                    <p className="text-xs text-slate-500 line-clamp-2 mb-3">{prod.description || 'Detergente de qualidade profissional.'}</p>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                    <span className="font-extrabold text-[#0B192C] text-sm">{Number(prod.price || 0).toFixed(2)} €</span>
+                    <Link
+                      href="/cliente/loja"
+                      className="bg-[#0B192C] hover:bg-slate-800 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition"
+                    >
+                      Encomendar
+                    </Link>
+                  </div>
                 </div>
               ))
             )}
           </div>
-        )}
-      </main>
-    </div>
+        </div>
+
+        {/* 6. PEDIDOS RECENTES (SERVIÇOS EXTRA E ENCOMENDAS) */}
+        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+          <h2 className="text-2xl font-extrabold text-[#0B192C] mb-6 flex items-center gap-2">
+            <span>📋</span> Pedidos Recentes de Serviços Extra
+          </h2>
+
+          {extraServiceRequests.length === 0 ? (
+            <p className="text-xs text-slate-400 py-6 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              Ainda não efetuou pedidos de serviços extra.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {extraServiceRequests.map((req) => (
+                <div key={req.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md bg-slate-200 text-slate-700">
+                      {req.service_type}
+                    </span>
+                    <div className="text-xs text-slate-500 font-medium mt-1">
+                      Data do Pedido: {formatDate(req.created_at || req.scheduled_date)} às {formatTime(req.created_at || req.scheduled_date)}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    {renderStatusBadge(req.status)}
+                    <span className="font-extrabold text-[#0B192C] text-sm">{Number(req.total_amount).toFixed(2)} €</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 7. HISTÓRICO DE INTERVENÇÕES CONCLUÍDAS */}
+        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
+          <h2 className="text-2xl font-extrabold text-[#0B192C] mb-6 flex items-center gap-2">
+            <span>✨</span> Histórico de Intervenções Concluídas
+          </h2>
+
+          {completedHistory.length === 0 ? (
+            <p className="text-xs text-slate-400 py-6 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              Sem intervenções concluídas registadas no histórico.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {completedHistory.map((item) => (
+                <div key={item.id} className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/20 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+                  <div>
+                    <span className="text-xs font-bold text-emerald-800">✓ Concluído</span>
+                    <div className="font-bold text-[#0B192C] text-sm mt-0.5">{item.service_type}</div>
+                    <div className="text-xs text-slate-500">Realizado em: {formatDate(item.scheduled_date)}</div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {(item.photos_before?.length > 0 || item.photos_after?.length > 0) && (
+                      <button
+                        onClick={() => setSelectedPhotos({
+                          before: item.photos_before || [],
+                          after: item.photos_after || [],
+                          title: item.service_type
+                        })}
+                        className="bg-[#0B192C] hover:bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
+                      >
+                        📷 Ver Fotografias
+                      </button>
+                    )}
+                    <span className="font-extrabold text-[#0B192C] text-base">{Number(item.total_amount).toFixed(2)} €</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 8. APOIO AO CLIENTE E CONTACTOS */}
+        <div className="bg-[#0B192C] text-white rounded-3xl p-8 shadow-xl flex flex-col md:flex-row justify-between items-center gap-6">
+          <div>
+            <span className="text-xs font-bold text-[#00D4FF] uppercase tracking-wider block mb-1">Apoio Direto ao Cliente</span>
+            <h3 className="text-2xl font-extrabold">Precisa de Reagendar ou Aclarar uma Dúvida?</h3>
+            <p className="text-xs text-slate-300 mt-1">A equipa da R&R Services está disponível para o ajudar rapidamente.</p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            <a
+              href="https://wa.me/351969177571"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-6 py-3 bg-[#00D4FF] hover:bg-cyan-400 text-[#0B192C] font-extrabold rounded-xl text-xs text-center transition"
+            >
+              💬 Contactar via WhatsApp
+            </a>
+            <a
+              href="tel:+351969177571"
+              className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-extrabold rounded-xl text-xs text-center border border-slate-700 transition"
+            >
+              📞 Ligar para a Central
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* Modal de Fotografias Antes & Depois */}
+      {selectedPhotos && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-xl font-bold text-[#0B192C]">{selectedPhotos.title}</h2>
+                <p className="text-xs text-slate-500">Galeria de fotografias da intervenção</p>
+              </div>
+              <button
+                onClick={() => setSelectedPhotos(null)}
+                className="text-slate-400 hover:text-slate-600 text-xl font-bold transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-3">Fotografias — ANTES</h3>
+                {selectedPhotos.before.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">Sem fotografias de Antes registadas.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {selectedPhotos.before.map((url, i) => (
+                      <img key={i} src={url} alt="Antes" className="w-full h-40 object-cover rounded-xl border border-slate-200" />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-xs font-bold uppercase text-emerald-600 tracking-wider mb-3">Fotografias — DEPOIS</h3>
+                {selectedPhotos.after.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">Sem fotografias de Depois registadas.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {selectedPhotos.after.map((url, i) => (
+                      <img key={i} src={url} alt="Depois" className="w-full h-40 object-cover rounded-xl border border-emerald-200" />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
   )
 }
