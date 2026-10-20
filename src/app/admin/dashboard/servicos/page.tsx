@@ -25,12 +25,6 @@ export interface ClientOption {
   phone: string;
 }
 
-export interface ClientOption {
-  id: string;
-  name: string;
-  phone: string;
-}
-
 export default function AgendaPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [clientsList, setClientsList] = useState<ClientOption[]>([]);
