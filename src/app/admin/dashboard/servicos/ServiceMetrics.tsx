@@ -1,6 +1,6 @@
 'use client'
 
-import { ServiceBooking } from './page'
+import { Order as ServiceBooking } from './page'
 
 interface ServiceMetricsProps {
   bookings: ServiceBooking[]

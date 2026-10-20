@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ServiceBooking } from './page'
+import { Order as ServiceBooking } from './page'
 
 interface BookingDetailsModalProps {
   booking: ServiceBooking
