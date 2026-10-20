@@ -1,113 +1,132 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  
-  const router = useRouter()
+  const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setErrorMsg(null)
+    e.preventDefault();
+    setLoading(true);
+    setErro('');
 
     try {
+      // 1. Autenticação no Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+        email: email.trim(),
+        password: password,
+      });
 
       if (error) {
-        setErrorMsg('Erro ao entrar: ' + error.message)
-        setLoading(false)
-        return
+        setErro('E-mail ou palavra-passe incorretos.');
+        setLoading(false);
+        return;
       }
 
+      // 2. Guardar o token no Cookie para o Middleware ler no servidor
       if (data.session) {
-        // Redirecionamento direto de página para garantir que a sessão é carregada a 100%
-        window.location.href = '/dashboard'
-      } else {
-        setErrorMsg('Sessão não iniciada. Tente novamente.')
-        setLoading(false)
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${data.session.expires_in}; SameSite=Lax`;
       }
-    } catch (err: any) {
-      setErrorMsg('Ocorreu um erro inesperado: ' + (err.message || String(err)))
-      setLoading(false)
+
+      // 3. Redirecionar conforme o e-mail
+      const userEmail = data.user?.email?.toLowerCase() || email.toLowerCase();
+
+      if (
+        userEmail === 'rrservices.pt@gmail.com' ||
+        userEmail.includes('admin') ||
+        userEmail.includes('gestor')
+      ) {
+        router.push('/admin');
+      } else {
+        router.push('/cliente');
+      }
+    } catch (err) {
+      setErro('Ocorreu um erro ao tentar ligar ao servidor.');
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <main className="min-h-screen flex flex-col justify-center items-center bg-slate-50 px-4">
-      <section className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-100 p-8" aria-label="Formulário de Autenticação">
+    <div className="min-h-screen flex flex-col justify-center items-center bg-slate-50 px-4 py-12 text-[#0B192C]">
+      
+      {/* Botão de regresso */}
+      <div className="absolute top-6 left-6">
+        <Link href="/" className="text-sm font-semibold text-slate-600 hover:text-[#0B192C] flex items-center gap-1 transition">
+          ← Voltar ao site
+        </Link>
+      </div>
+
+      <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-lg border border-slate-200">
         
-        {/* Cabeçalho do Card */}
-        <header className="text-center mb-8">
-          <Link href="/" className="inline-block mb-3">
-            <span className="text-3xl font-bold tracking-wider text-[#00D4FF]">R&R</span>
-            <span className="text-xl font-medium text-[#0B192C]"> Services</span>
+        {/* Logótipo */}
+        <div className="text-center mb-8">
+          <Link href="/" className="inline-flex items-center space-x-2">
+            <span className="text-3xl font-extrabold tracking-wider text-[#00D4FF]">R&R</span>
+            <span className="text-2xl font-bold text-[#0B192C]">Services</span>
           </Link>
-          <h1 className="text-xl font-bold text-[#0B192C]">Aceder à Plataforma</h1>
-          <p className="text-sm text-slate-500 mt-1">Insira as suas credenciais para gerir os seus serviços</p>
-        </header>
+          <p className="text-sm text-slate-500 mt-2">Aceda à sua área reservada ou ao painel de gestão</p>
+        </div>
 
         {/* Mensagem de Erro */}
-        {errorMsg && (
-          <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
-            {errorMsg}
+        {erro && (
+          <div className="mb-6 p-3 text-sm bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-center">
+            {erro}
           </div>
         )}
 
-        {/* Formulário de Login */}
-        <form onSubmit={handleLogin} className="space-y-4">
+        {/* Formulário de Autenticação */}
+        <form onSubmit={handleLogin} className="space-y-5">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">E-mail</label>
+            <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
+              E-mail
+            </label>
             <input
-              id="email"
               type="email"
               required
+              placeholder="rrservices.pt@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="exemplo@email.com"
-              className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#00D4FF] focus:border-[#00D4FF] outline-none transition text-slate-800"
+              className="w-full p-3 rounded-xl border border-slate-300 focus:outline-none focus:border-[#00D4FF] focus:ring-1 focus:ring-[#00D4FF] text-sm"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">Palavra-passe</label>
+            <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
+              Palavra-passe
+            </label>
             <input
-              id="password"
               type="password"
               required
+              placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#00D4FF] focus:border-[#00D4FF] outline-none transition text-slate-800"
+              className="w-full p-3 rounded-xl border border-slate-300 focus:outline-none focus:border-[#00D4FF] focus:ring-1 focus:ring-[#00D4FF] text-sm"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#0B192C] text-white font-semibold py-3 rounded-xl shadow-md hover:bg-slate-800 transition disabled:opacity-50 cursor-pointer"
+            className="w-full bg-[#0B192C] text-white font-bold py-3.5 rounded-xl hover:bg-slate-800 transition shadow-md flex items-center justify-center cursor-pointer"
           >
-            {loading ? 'A entrar...' : 'Entrar na Conta'}
+            {loading ? 'A autenticar...' : 'Entrar no Sistema'}
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-slate-500">
-          <Link href="/" className="hover:text-[#0B192C] font-medium">
-            ← Voltar à página inicial
-          </Link>
+        <div className="mt-6 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 text-center">
+          <p className="font-semibold text-[#0B192C]">Acesso de Administrador R&R</p>
+          <p className="text-slate-500 mt-0.5">Autenticação oficial ligada ao Supabase.</p>
         </div>
 
-      </section>
-    </main>
-  )
+      </div>
+    </div>
+  );
 }
