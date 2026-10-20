@@ -17,6 +17,14 @@ export interface Order {
   };
 }
 
+export type ServiceBooking = Order;
+
+export interface ClientOption {
+  id: string;
+  name: string;
+  phone: string;
+}
+
 export interface ClientOption {
   id: string;
   name: string;
