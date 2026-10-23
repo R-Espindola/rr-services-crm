@@ -44,7 +44,6 @@ export default function ClientsPage() {
     if (data) setClientOrders(data)
   }
 
-  // 1. Criar Cliente APENAS na tabela (sem criar login automático)
   async function handleCreateClient(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
@@ -72,7 +71,6 @@ export default function ClientsPage() {
     setSubmitting(false)
   }
 
-  // 2. Gerar Acesso e Enviar WhatsApp a partir da Ficha 360°
   async function handleGerarAcessoWhatsApp(client: Client) {
     if (!confirm(`Deseja gerar credenciais de acesso para ${client.name} e enviar por WhatsApp?`)) {
       return
@@ -104,8 +102,7 @@ export default function ClientsPage() {
 
       const passwordTemp = result.password
 
-      // Mensagem formatada para o WhatsApp
-      const mensagemWhatsApp = `Olá ${client.name}! A sua conta na R&R Services foi ativada. 🧹✨\n\nPode aceder ao Portal do Cliente em: ${window.location.origin}/login\n\nOs seus dados de acesso:\n- E-mail: ${client.email}\n- Palavra-passe temporária: ${passwordTemp}\n\nRecomendamos que altere a sua palavra-passe após o primeiro acesso.`
+      const mensagemWhatsApp = `Olá ${client.name}! A sua conta na R&R Services foi ativada. 🧹✨\n\nPode aceder ao Portal do Cliente em: ${window.location.origin}/login\n\nOs seus dados de acesso:\nE-mail: ${client.email}\nPalavra-passe temporária: ${passwordTemp}\n\nRecomendamos que altere a sua palavra-passe após o primeiro acesso.`
 
       const linkWhatsApp = `https://api.whatsapp.com/send?phone=${phoneWithCountryCode}&text=${encodeURIComponent(mensagemWhatsApp)}`
       
@@ -117,7 +114,6 @@ export default function ClientsPage() {
     }
   }
 
-  // Função para Eliminar Cliente
   async function handleDeleteClient(id: string, clientName: string) {
     if (!confirm(`Tem a certeza de que pretende eliminar o cliente "${clientName}"?`)) {
       return
@@ -139,93 +135,100 @@ export default function ClientsPage() {
   )
 
   return (
-    <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-slate-50 text-[#0B192C] p-6 md:p-8">
+    <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-slate-50 text-[#0B192C] p-4 sm:p-6 md:p-8">
       
-      <div className="flex flex-col md:flex-row justify-between md:items-center mb-8 gap-4">
+      {/* CABEÇALHO & PESQUISA RESPONSIVA */}
+      <div className="flex flex-col md:flex-row justify-between md:items-center mb-6 gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-[#0B192C]">Carteira de Clientes</h1>
-          <p className="text-slate-500 text-sm mt-1">Consulte fichas 360°, contactos e gere acessos ao portal.</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C]">Carteira de Clientes</h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">Consulte fichas 360°, contactos e gere acessos ao portal.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
           <input
             type="text"
             placeholder="🔍 Pesquisar cliente..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-4 py-2 border border-slate-300 rounded-xl bg-white text-xs outline-none focus:ring-2 focus:ring-[#00D4FF]"
+            className="px-4 py-3 sm:py-2 border border-slate-300 rounded-xl bg-white text-sm sm:text-xs outline-none focus:ring-2 focus:ring-[#00D4FF] w-full sm:w-64"
           />
           <button
             onClick={() => setShowAddModal(true)}
-            className="bg-[#0B192C] text-white px-5 py-2.5 rounded-xl font-bold text-xs hover:bg-slate-800 transition cursor-pointer shadow-sm"
+            className="bg-[#0B192C] text-white px-5 py-3 sm:py-2.5 rounded-xl font-bold text-xs hover:bg-slate-800 transition cursor-pointer shadow-sm text-center shrink-0"
           >
             + Novo Cliente
           </button>
         </div>
       </div>
 
+      {/* TABELA COM SCROLL HORIZONTAL PARA MOBILE */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-bold">
-            <tr>
-              <th className="p-4">Nome</th>
-              <th className="p-4">Telemóvel</th>
-              <th className="p-4">E-mail</th>
-              <th className="p-4">Morada</th>
-              <th className="p-4 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-medium">
-            {loading ? (
-              <tr><td colSpan={5} className="text-center py-10 text-slate-400">A carregar clientes...</td></tr>
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-10 text-slate-400">Nenhum cliente encontrado.</td></tr>
-            ) : (
-              filtered.map(c => (
-                <tr key={c.id} className="hover:bg-slate-50 transition">
-                  <td className="p-4 font-bold text-[#0B192C]">{c.name}</td>
-                  <td className="p-4 text-slate-700">{c.phone}</td>
-                  <td className="p-4 text-slate-500 text-xs">{c.email}</td>
-                  <td className="p-4 text-slate-600 text-xs">{c.address || 'Sem morada'}</td>
-                  <td className="p-4 text-right space-x-2">
-                    <button
-                      onClick={() => handleOpenView(c)}
-                      className="bg-[#00D4FF]/10 text-[#0B192C] font-bold px-3 py-1.5 rounded-lg text-xs hover:bg-[#00D4FF]/20 transition cursor-pointer"
-                    >
-                      👁️ Ficha 360°
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm min-w-[650px]">
+            <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-bold">
+              <tr>
+                <th className="p-4">Nome</th>
+                <th className="p-4">Telemóvel</th>
+                <th className="p-4">E-mail</th>
+                <th className="p-4">Morada</th>
+                <th className="p-4 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {loading ? (
+                <tr><td colSpan={5} className="text-center py-10 text-slate-400">A carregar clientes...</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={5} className="text-center py-10 text-slate-400">Nenhum cliente encontrado.</td></tr>
+              ) : (
+                filtered.map(c => (
+                  <tr key={c.id} className="hover:bg-slate-50 transition">
+                    <td className="p-4 font-bold text-[#0B192C]">{c.name}</td>
+                    <td className="p-4 text-slate-700">{c.phone}</td>
+                    <td className="p-4 text-slate-500 text-xs">{c.email}</td>
+                    <td className="p-4 text-slate-600 text-xs">{c.address || 'Sem morada'}</td>
+                    <td className="p-4 text-right">
+                      <button
+                        onClick={() => handleOpenView(c)}
+                        className="bg-[#00D4FF]/10 text-[#0B192C] font-bold px-3.5 py-2 rounded-xl text-xs hover:bg-[#00D4FF]/25 transition cursor-pointer inline-block"
+                      >
+                        👁️ Ficha 360°
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* MODAL NOVO CLIENTE */}
+      {/* MODAL NOVO CLIENTE (Adaptado para iPhone/Mobile) */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-2xl">
-            <h3 className="text-xl font-bold mb-4 text-[#0B192C]">Registar Novo Cliente</h3>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl my-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg sm:text-xl font-bold text-[#0B192C]">Registar Novo Cliente</h3>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 font-bold p-2">✕</button>
+            </div>
             <form onSubmit={handleCreateClient} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Nome Completo *</label>
-                <input type="text" required placeholder="Nome Completo" value={name} onChange={e => setName(e.target.value)} className="w-full p-3 border rounded-xl text-sm bg-slate-50" />
+                <input type="text" required placeholder="Nome Completo" value={name} onChange={e => setName(e.target.value)} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]" />
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Telemóvel *</label>
-                <input type="text" required placeholder="912 345 678" value={phone} onChange={e => setPhone(e.target.value)} className="w-full p-3 border rounded-xl text-sm bg-slate-50" />
+                <input type="text" required placeholder="912 345 678" value={phone} onChange={e => setPhone(e.target.value)} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]" />
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">E-mail</label>
-                <input type="email" placeholder="email@exemplo.com" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 border rounded-xl text-sm bg-slate-50" />
+                <input type="email" placeholder="email@exemplo.com" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]" />
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Morada Principal</label>
-                <textarea placeholder="Rua, número, andar..." value={address} onChange={e => setAddress(e.target.value)} className="w-full p-3 border rounded-xl text-sm bg-slate-50 h-20" />
+                <textarea placeholder="Rua, número, andar..." value={address} onChange={e => setAddress(e.target.value)} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 h-20 outline-none focus:ring-2 focus:ring-[#00D4FF]" />
               </div>
-              <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-xs font-bold text-slate-600">Cancelar</button>
-                <button type="submit" disabled={submitting} className="px-5 py-2.5 bg-[#0B192C] text-white rounded-xl text-xs font-bold cursor-pointer">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setShowAddModal(false)} className="w-full sm:w-auto px-4 py-3 sm:py-2 text-xs font-bold text-slate-600">Cancelar</button>
+                <button type="submit" disabled={submitting} className="w-full sm:w-auto px-5 py-3.5 sm:py-2.5 bg-[#0B192C] text-white rounded-xl text-xs font-bold cursor-pointer shadow">
                   {submitting ? 'A guardar...' : 'Guardar Cliente'}
                 </button>
               </div>
@@ -234,16 +237,16 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* MODAL FICHA 360° */}
+      {/* MODAL FICHA 360° (Adaptado para iPhone/Mobile) */}
       {viewingClient && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl space-y-6">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 my-auto max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="text-xl font-bold text-[#0B192C]">{viewingClient.name}</h3>
-              <button onClick={() => setViewingClient(null)} className="font-bold text-slate-400 hover:text-slate-600">✕</button>
+              <h3 className="text-lg sm:text-xl font-bold text-[#0B192C]">{viewingClient.name}</h3>
+              <button onClick={() => setViewingClient(null)} className="font-bold text-slate-400 hover:text-slate-600 p-2">✕</button>
             </div>
 
-            <div className="space-y-2 text-xs text-slate-600">
+            <div className="space-y-2 text-xs sm:text-sm text-slate-600 bg-slate-50 p-4 rounded-2xl">
               <p>📞 <strong>Telemóvel:</strong> {viewingClient.phone}</p>
               <p>✉️ <strong>E-mail:</strong> {viewingClient.email}</p>
               <p>📍 <strong>Morada:</strong> {viewingClient.address || 'Não registada'}</p>
@@ -255,14 +258,14 @@ export default function ClientsPage() {
               <button
                 onClick={() => handleGerarAcessoWhatsApp(viewingClient)}
                 disabled={gerandoAcesso}
-                className="mt-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow transition cursor-pointer flex items-center justify-center gap-2"
+                className="mt-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3.5 sm:py-2.5 px-4 rounded-xl shadow transition cursor-pointer flex items-center justify-center gap-2"
               >
                 <span>💬</span>
                 <span>{gerandoAcesso ? 'A gerar acesso...' : 'Gerar & Enviar Acesso por WhatsApp'}</span>
               </button>
             </div>
 
-            <div className="bg-slate-50 p-4 rounded-xl text-xs space-y-2">
+            <div className="bg-slate-50 p-4 rounded-2xl text-xs space-y-2">
               <span className="font-bold uppercase text-slate-400 block">Intervenções Registadas ({clientOrders.length}):</span>
               {clientOrders.length === 0 ? (
                 <p className="text-slate-400 italic">Sem intervenções associadas.</p>
@@ -276,16 +279,16 @@ export default function ClientsPage() {
               )}
             </div>
 
-            <div className="flex justify-between items-center pt-2 border-t">
+            <div className="flex flex-col sm:flex-row justify-between items-center pt-2 border-t gap-3">
               <button
                 onClick={() => handleDeleteClient(viewingClient.id, viewingClient.name)}
-                className="text-xs font-bold text-red-600 hover:underline cursor-pointer"
+                className="w-full sm:w-auto text-xs font-bold text-red-600 hover:underline cursor-pointer py-2 text-center"
               >
                 🗑️ Eliminar Cliente
               </button>
               <button
                 onClick={() => setViewingClient(null)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
+                className="w-full sm:w-auto px-5 py-3 sm:py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold cursor-pointer text-center"
               >
                 Fechar
               </button>

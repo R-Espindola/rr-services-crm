@@ -29,16 +29,42 @@ export default function Home() {
     }));
   };
 
+  const [orcamentoReference, setOrcamentoReference] = useState<string | null>(null);
+  const [orcamentoErro, setOrcamentoErro] = useState<string | null>(null);
+
   const handleSimularSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCarregando(true);
+    setOrcamentoErro(null);
 
-    // Simulação de submissão e gravação no módulo de orçamentos
     try {
-      // Aqui pode conectar diretamente à rota/API do Supabase existente em /api/orcamentos ou supabase-client
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await fetch('/api/orcamentos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: formData.nome,
+          email: formData.email,
+          telefone: formData.telefone,
+          tipoServico: formData.tipoServico,
+          tipologia: formData.tipologia,
+          frequencia: formData.frequencia,
+          servicosAdicionais: formData.servicosAdicionais,
+          observacoes: formData.observacoes,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setOrcamentoErro(result.error || 'Erro ao submeter orçamento.');
+        setCarregando(false);
+        return;
+      }
+
+      setOrcamentoReference(result.reference);
       setOrcamentoSubmetido(true);
     } catch (err) {
+      setOrcamentoErro('Erro de conexão ao submeter o orçamento.');
       console.error(err);
     } finally {
       setCarregando(false);
@@ -294,6 +320,11 @@ export default function Home() {
                 ✓
               </div>
               <h3 className="text-2xl font-bold text-emerald-900 mb-2">Pedido Recebido com Sucesso!</h3>
+              {orcamentoReference && (
+                <p className="text-emerald-700 mb-4">
+                  Referência do orçamento: <span className="font-bold text-[#0B192C]">{orcamentoReference}</span>
+                </p>
+              )}
               <p className="text-emerald-700 max-w-lg mx-auto mb-6">
                 Obrigado pelo seu pedido. A equipa da R&R Services irá analisar os detalhes e entrar em contacto em breve.
               </p>
@@ -443,6 +474,12 @@ export default function Home() {
               <p className="text-xs text-slate-500 italic">
                 * Os valores calculados são estimativos sujeitos a confirmação após avaliação técnica do espaço.
               </p>
+
+              {orcamentoErro && (
+                <div className="mb-4 p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-sm font-medium text-center">
+                  {orcamentoErro}
+                </div>
+              )}
 
               <button
                 type="submit"

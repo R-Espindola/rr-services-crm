@@ -18,7 +18,6 @@ export default function LoginPage() {
     setErro('');
 
     try {
-      // 1. Autenticação no Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password: password,
@@ -30,23 +29,31 @@ export default function LoginPage() {
         return;
       }
 
-      // 2. Guardar o token no Cookie para o Middleware ler no servidor
-      if (data.session) {
-        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${data.session.expires_in}; SameSite=Lax`;
+      if (!data.session) {
+        setErro('Não foi possível iniciar sessão. Tente novamente.');
+        setLoading(false);
+        return;
       }
 
-      // 3. Redirecionar conforme o e-mail
       const userEmail = data.user?.email?.toLowerCase() || email.toLowerCase();
 
-      if (
-        userEmail === 'rrservices.pt@gmail.com' ||
-        userEmail.includes('admin') ||
-        userEmail.includes('gestor')
-      ) {
-        router.push('/admin');
-      } else {
-        router.push('/cliente');
+      // Determinar o destino com base no role registado na tabela clients
+      let destino = '/cliente';
+      try {
+        const { data: clientData } = await supabase
+          .from('clients')
+          .select('role')
+          .eq('email', userEmail)
+          .single();
+
+        if (clientData?.role === 'admin') {
+          destino = '/admin';
+        }
+      } catch {
+        // Se não encontrar o perfil, mantém o destino padrão (/cliente)
       }
+
+      router.push(destino);
     } catch (err) {
       setErro('Ocorreu um erro ao tentar ligar ao servidor.');
     } finally {
@@ -56,8 +63,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col justify-center items-center bg-slate-50 px-4 py-12 text-[#0B192C]">
-      
-      {/* Botão de regresso */}
+
       <div className="absolute top-6 left-6">
         <Link href="/" className="text-sm font-semibold text-slate-600 hover:text-[#0B192C] flex items-center gap-1 transition">
           ← Voltar ao site
@@ -65,8 +71,7 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-lg border border-slate-200">
-        
-        {/* Logótipo */}
+
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center space-x-2">
             <span className="text-3xl font-extrabold tracking-wider text-[#00D4FF]">R&R</span>
@@ -75,14 +80,12 @@ export default function LoginPage() {
           <p className="text-sm text-slate-500 mt-2">Aceda à sua área reservada ou ao painel de gestão</p>
         </div>
 
-        {/* Mensagem de Erro */}
         {erro && (
           <div className="mb-6 p-3 text-sm bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-center">
             {erro}
           </div>
         )}
 
-        {/* Formulário de Autenticação */}
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <label className="block text-xs font-bold uppercase text-slate-700 mb-1">

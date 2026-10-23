@@ -1,193 +1,380 @@
-"use client";
+'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
-export default function AdminDashboard() {
-  const [loading, setLoading] = useState(true);
-  const [orcamentos, setOrcamentos] = useState<any[]>([]);
-  const [stats, setStats] = useState({
-    pendentes: 0,
-    agendadas: 18,
-    faturacao: "2.450 €",
-    clientesAtivos: 34
+interface Metric {
+  titulo: string;
+  valor: string | number;
+  sub: string;
+  link: string;
+  icone: string;
+}
+
+interface Order {
+  id: string;
+  client_id: string;
+  service_type: string;
+  scheduled_date: string;
+  total_amount: number;
+  status: string;
+  notes?: string;
+  clients?: {
+    name: string;
+    phone: string;
+  };
+}
+
+interface Client {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  address?: string;
+}
+
+const formatarPreco = (valor: number) =>
+  new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: "EUR",
+  }).format(valor);
+
+const formatarDataHora = (dateString: string) => {
+  return new Date(dateString).toLocaleString('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
+};
+
+const inicioDoDia = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+};
+
+const fimDoDia = () => {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString();
+};
+
+const inicioDoMes = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+};
+
+export default function AdminDashboard() {
+  const [showQuickClientModal, setShowQuickClientModal] = useState(false);
+  const [metricas, setMetricas] = useState<Metric[]>([]);
+  const [metricasLoading, setMetricasLoading] = useState(true);
+  const [intervencoesHoje, setIntervencoesHoje] = useState<Order[]>([]);
+  const [ultimosRegistos, setUltimosRegistos] = useState<{ tipo: string; descricao: string; data: string; valor?: number }[]>([]);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  const carregarMetricas = async () => {
+    setMetricasLoading(true);
+    setDashboardError(null);
+
+    try {
+      // 1. Número de clientes
+      const { count: totalClientes } = await supabase
+        .from('clients')
+        .select('*', { count: 'exact', head: true });
+
+      // 2. Serviços agendados para hoje
+      const { data: ordersHoje, error: errorHoje } = await supabase
+        .from('orders')
+        .select('*, clients(name, phone)')
+        .gte('scheduled_date', inicioDoDia())
+        .lte('scheduled_date', fimDoDia())
+        .order('scheduled_date', { ascending: true });
+
+      if (errorHoje) throw errorHoje;
+      setIntervencoesHoje((ordersHoje || []) as Order[]);
+
+      // 3. Orçamentos pendentes
+      const { count: orcamentosPendentes } = await supabase
+        .from('quotes')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+
+      // 4. Serviços concluídos
+      const { count: servicosConcluidos } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'completed');
+
+      // 5. Faturação registada no mês (ordens concluídas)
+      const { data: faturacaoMes } = await supabase
+        .from('orders')
+        .select('total_amount, scheduled_date')
+        .eq('status', 'completed')
+        .gte('scheduled_date', inicioDoMes())
+        .lte('scheduled_date', fimDoDia());
+
+      const faturacaoTotal = (faturacaoMes || [])
+        .reduce((acc, item) => acc + (item.total_amount || 0), 0);
+
+      // 6. Valores pendentes (ordens pendentes)
+      const { data: pendentes } = await supabase
+        .from('orders')
+        .select('total_amount')
+        .eq('status', 'pending');
+
+      const valoresPendentes = (pendentes || [])
+        .reduce((acc, item) => acc + (item.total_amount || 0), 0);
+
+      // Últimos registos (clientes criados recentemente e ordens recentes)
+      const { data: clientesRecentes } = await supabase
+        .from('clients')
+        .select('id, name, created_at')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      const { data: ordensRecentes } = await supabase
+        .from('orders')
+        .select('*, clients(name)')
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      const registos: { tipo: string; descricao: string; data: string; valor?: number }[] = [];
+
+      (clientesRecentes || []).forEach((c) => {
+        registos.push({
+          tipo: 'Cliente',
+          descricao: `Cliente ${c.name} adicionado`,
+          data: c.created_at || '',
+        });
+      });
+
+      (ordensRecentes || []).forEach((o) => {
+        registos.push({
+          tipo: 'Ordem de Serviço',
+          descricao: `${o.service_type} - ${o.clients?.name || 'Cliente'}`,
+          data: o.created_at || '',
+          valor: o.total_amount,
+        });
+      });
+
+      registos.sort(
+        (a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()
+      );
+      setUltimosRegistos(registos.slice(0, 5));
+
+      setMetricas([
+        {
+          titulo: 'CLIENTES',
+          valor: totalClientes || 0,
+          sub: 'Carteira ativa',
+          link: '/admin/clientes',
+          icone: '👥',
+        },
+        {
+          titulo: 'SERVIÇOS HOJE',
+          valor: (ordersHoje || []).length,
+          sub: 'Ver agenda',
+          link: '/admin/servicos',
+          icone: '🗓️',
+        },
+        {
+          titulo: 'ORÇAMENTOS PENDENTES',
+          valor: orcamentosPendentes || 0,
+          sub: 'A aguardar resposta',
+          link: '/admin/orcamentos',
+          icone: '📄',
+        },
+        {
+          titulo: 'SERVIÇOS CONCLUÍDOS',
+          valor: servicosConcluidos || 0,
+          sub: 'Faturados',
+          link: '/admin/servicos',
+          icone: '✅',
+        },
+        {
+          titulo: 'FATURAÇÃO (MÊS)',
+          valor: formatarPreco(faturacaoTotal),
+          sub: 'Serviços concluídos',
+          link: '/admin/orcamentos',
+          icone: '💶',
+        },
+        {
+          titulo: 'VALORES PENDENTES',
+          valor: formatarPreco(valoresPendentes),
+          sub: 'A receber',
+          link: '/admin/servicos',
+          icone: '⏳',
+        },
+      ]);
+    } catch (err) {
+      setDashboardError('Erro ao carregar métricas do dashboard.');
+      console.error(err);
+    } finally {
+      setMetricasLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetchAdminData();
+    carregarMetricas();
   }, []);
 
-  async function fetchAdminData() {
-    setLoading(true);
-
-    const { data: quotesData } = await supabase
-      .from('quotes')
-      .select('*, clients(name, phone, email)')
-      .order('created_at', { ascending: false });
-
-    const { data: clientsData } = await supabase
-      .from('clients')
-      .select('*');
-
-    if (quotesData) {
-      setOrcamentos(quotesData);
-      const pendentesCount = quotesData.filter(o => o.status === 'pending' || o.status === 'Pendente').length;
-      setStats(prev => ({ ...prev, pendentes: pendentesCount }));
-    }
-
-    if (clientsData) {
-      setStats(prev => ({ ...prev, clientesAtivos: clientsData.length }));
-    }
-
-    setLoading(false);
-  }
-
-  async function handleMudarStatus(id: string, novoStatus: string) {
-    const { error } = await supabase
-      .from('quotes')
-      .update({ status: novoStatus })
-      .eq('id', id);
-
-    if (!error) {
-      fetchAdminData();
-    } else {
-      alert('Erro ao atualizar estado: ' + error.message);
-    }
-  }
-
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-      
-      {/* Header Superior */}
-      <header className="bg-white border-b border-slate-200 py-4 px-8 flex justify-between items-center sticky top-0 z-10 shadow-sm">
-        <div>
-          <h1 className="text-xl font-bold text-[#0B192C]">Painel de Gestão Operacional</h1>
-          <p className="text-xs text-slate-500">R&R Services • Portugal (Lisboa/Margem Sul)</p>
+    <div className="space-y-6">
+      {dashboardError && (
+        <div className="bg-red-50 border border-red-200 p-4 rounded-xl text-red-800 text-sm font-medium text-center">
+          {dashboardError}
         </div>
+      )}
 
-        <div className="flex items-center space-x-4">
-          <div className="text-right hidden sm:block">
-            <span className="block text-sm font-bold text-[#0B192C]">Gestão R&R</span>
-            <span className="block text-xs text-slate-500">admin@rrservices.pt</span>
-          </div>
-          <div className="w-10 h-10 rounded-full bg-[#0B192C] text-[#00D4FF] flex items-center justify-center font-bold shadow">
-            R
-          </div>
-        </div>
-      </header>
-
-      {/* Corpo da Visão Geral */}
-      <div className="p-6 md:p-8 space-y-8 max-w-7xl w-full mx-auto">
-        
-        {/* CARDS KPIS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Orçamentos Pendentes</span>
-            <div className="text-3xl font-extrabold text-[#0B192C] mt-2">{stats.pendentes}</div>
-            <span className="text-xs text-amber-600 font-semibold mt-1 inline-block">Aguardam validação</span>
+      {/* 1. AÇÕES RÁPIDAS DE GESTÃO (FIXO NO TOPO) */}
+      <section className="bg-[#0B192C] text-white p-5 sm:p-6 rounded-3xl shadow-md border border-slate-800">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div>
+            <h2 className="text-lg sm:text-xl font-extrabold text-[#00D4FF]">Ações Rápidas de Gestão</h2>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Crie registos instantâneos sem navegar entre páginas.
+            </p>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Limpezas Agendadas</span>
-            <div className="text-3xl font-extrabold text-[#0B192C] mt-2">{stats.agendadas}</div>
-            <span className="text-xs text-emerald-600 font-semibold mt-1 inline-block">Esta semana</span>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Faturação Estimada</span>
-            <div className="text-3xl font-extrabold text-[#00D4FF] mt-2">{stats.faturacao}</div>
-            <span className="text-xs text-slate-500 mt-1 inline-block">Mês Corrente</span>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Clientes Ativos</span>
-            <div className="text-3xl font-extrabold text-[#0B192C] mt-2">{stats.clientesAtivos}</div>
-            <span className="text-xs text-indigo-600 font-semibold mt-1 inline-block">Total registados</span>
-          </div>
-        </div>
-
-        {/* TABELA DE PEDIDOS DE ORÇAMENTO */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-200 flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-bold text-[#0B192C]">Pedidos de Orçamento Recebidos</h2>
-              <p className="text-xs text-slate-500">Solicitações vindas do simulador da página inicial</p>
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 w-full lg:w-auto">
             <Link
-              href="/admin/dashboard/orcamentos"
-              className="text-xs font-bold text-[#00D4FF] hover:underline"
+              href="/admin/clientes"
+              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs py-3 px-3.5 rounded-xl border border-slate-700 transition text-center shadow-sm"
             >
-              Ver Todos os Orçamentos →
+              + Novo Cliente
+            </Link>
+
+            <Link
+              href="/admin/servicos"
+              className="bg-[#00D4FF] hover:bg-[#00c2ea] text-[#0B192C] font-extrabold text-xs py-3 px-3.5 rounded-xl transition text-center shadow-sm"
+            >
+              + Agendar Limpeza
+            </Link>
+
+            <Link
+              href="/admin/orcamentos"
+              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs py-3 px-3.5 rounded-xl border border-slate-700 transition text-center shadow-sm"
+            >
+              + Criar Orçamento
+            </Link>
+
+            <Link
+              href="/admin/loja"
+              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs py-3 px-3.5 rounded-xl border border-slate-700 transition text-center shadow-sm"
+            >
+              + Produto / Stock
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. TÍTULO E RESUMO DA PÁGINA */}
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C]">Painel de Controlo Operacional</h1>
+        <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          Resumo em tempo real da atividade diária, marcações, propostas e stock da R&R Services.
+        </p>
+      </div>
+
+      {/* 3. CARTÕES DE MÉTRICAS OPERACIONAIS */}
+      <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+        {metricasLoading ? (
+          Array.from({ length: 6 }).map((_, idx) => (
+            <div key={idx} className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between group">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase text-slate-400 block tracking-wider">Carregando...</span>
+                <span className="text-2xl sm:text-3xl font-black text-[#0B192C] block my-2 animate-pulse">-</span>
+              </div>
+              <span className="text-xs font-bold text-[#00D4FF] group-hover:underline flex items-center gap-1 mt-2">-</span>
+            </div>
+          ))
+        ) : (
+          metricas.map((item, idx) => (
+            <Link
+              key={idx}
+              href={item.link}
+              className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-sm hover:border-[#00D4FF] transition flex flex-col justify-between group"
+            >
+              <div>
+                <span className="text-[10px] font-extrabold uppercase text-slate-400 block tracking-wider">
+                  {item.titulo}
+                </span>
+                <span className="text-2xl sm:text-3xl font-black text-[#0B192C] block my-2">
+                  {item.valor}
+                </span>
+              </div>
+              <span className="text-xs font-bold text-[#00D4FF] group-hover:underline flex items-center gap-1 mt-2">
+                {item.icone} {item.sub}
+              </span>
+            </Link>
+          ))
+        )}
+      </section>
+
+      {/* 4. BLOCOS DE REGISTOS RECENTES & INTERVENÇÕES DO DIA */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Intervenções de Hoje */}
+        <section className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+            <h3 className="font-extrabold text-base text-[#0B192C]">🧹 Intervenções Agendadas</h3>
+            <Link href="/admin/servicos" className="text-xs font-bold text-[#00D4FF] hover:underline">
+              Ver Agenda Completa →
             </Link>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold uppercase text-slate-600">
-                <tr>
-                  <th className="p-4">ID / Data</th>
-                  <th className="p-4">Cliente</th>
-                  <th className="p-4">Serviço / Tipologia</th>
-                  <th className="p-4">Frequência</th>
-                  <th className="p-4">Estimativa</th>
-                  <th className="p-4">Estado</th>
-                  <th className="p-4 text-right">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {loading ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-slate-400">A carregar dados do Supabase...</td></tr>
-                ) : orcamentos.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-12 text-slate-400">Nenhum orçamento registado até ao momento.</td></tr>
-                ) : (
-                  orcamentos.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50 transition">
-                      <td className="p-4">
-                        <span className="font-bold text-[#0B192C]">#{String(item.id).substring(0, 6)}</span>
-                        <span className="block text-xs text-slate-400">{item.created_at ? new Date(item.created_at).toLocaleDateString('pt-PT') : 'Recente'}</span>
-                      </td>
-                      <td className="p-4">
-                        <span className="font-semibold text-slate-800">{item.clients?.name || 'Cliente'}</span>
-                        <span className="block text-xs text-slate-500">{item.clients?.phone}</span>
-                      </td>
-                      <td className="p-4">
-                        <span>{item.service_type}</span>
-                        <span className="block text-xs text-slate-400">Tipo: {item.typology || 'N/A'}</span>
-                      </td>
-                      <td className="p-4">
-                        <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg text-xs font-semibold">
-                          {item.frequency || 'Pontual'}
-                        </span>
-                      </td>
-                      <td className="p-4 font-bold text-[#0B192C]">
-                        {Number(item.total || item.subtotal || 0).toFixed(2)} €
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                          item.status === 'approved' || item.status === 'Aprovado'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {item.status || 'Pendente'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right space-x-2">
-                        <button
-                          onClick={() => handleMudarStatus(item.id, 'approved')}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg transition cursor-pointer"
-                        >
-                          Aprovar
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          {intervencoesHoje.length === 0 ? (
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-center text-slate-400 text-sm">
+              Nenhuma intervenção agendada para hoje.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {intervencoesHoje.map((intervencao) => (
+                <div key={intervencao.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
+                  <div>
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-md">
+                      Hoje • {new Date(intervencao.scheduled_date).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <h4 className="font-bold text-sm text-[#0B192C] mt-1">{intervencao.clients?.name || 'Cliente'}</h4>
+                    <p className="text-xs text-slate-500">{intervencao.service_type}</p>
+                  </div>
+                  <span className="text-sm font-extrabold text-[#0B192C]">{formatarPreco(intervencao.total_amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
+        {/* Últimos Registos */}
+        <section className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+            <h3 className="font-extrabold text-base text-[#0B192C]">📋 Últimos Registos do Sistema</h3>
+            <Link href="/admin/clientes" className="text-xs font-bold text-[#00D4FF] hover:underline">
+              Ver Clientes →
+            </Link>
+          </div>
+
+          {ultimosRegistos.length === 0 ? (
+            <div className="text-center py-10 text-slate-400 text-sm">Sem registos recentes.</div>
+          ) : (
+            <div className="space-y-2 text-xs text-slate-600">
+              {ultimosRegistos.map((registo, idx) => (
+                <div key={idx} className="flex justify-between py-2 border-b border-slate-100 last:border-0">
+                  <span>
+                    <strong>{registo.descricao}</strong>
+                  </span>
+                  <span className="text-slate-400 text-[10px]">
+                    {new Date(registo.data).toLocaleDateString('pt-PT')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

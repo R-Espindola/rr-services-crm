@@ -17,7 +17,7 @@ export default function BookingDetailsModal({
 }: BookingDetailsModalProps) {
   const [editDate, setEditDate] = useState('')
   const [editTime, setEditTime] = useState('')
-  const [editStatus, setEditStatus] = useState<ServiceBooking['status']>('pending')
+  const [editStatus, setEditStatus] = useState<string>('pending')
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -93,14 +93,14 @@ export default function BookingDetailsModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-50">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-50 overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-100 my-auto max-h-[90vh] overflow-y-auto">
         <header className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
-          <h3 className="text-lg font-bold text-[#0B192C]">Editar / Detalhes do Agendamento</h3>
+          <h3 className="text-base sm:text-lg font-bold text-[#0B192C]">Editar / Detalhes do Agendamento</h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
+            className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer p-2"
           >
             ✕
           </button>
@@ -118,8 +118,7 @@ export default function BookingDetailsModal({
             <p className="text-base font-bold text-[#0B192C] mt-0.5">{booking.service_type}</p>
           </div>
 
-          {/* Editar Data e Hora */}
-          <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3.5 border border-slate-200 rounded-xl">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3.5 border border-slate-200 rounded-2xl">
             <div>
               <label htmlFor="modal-edit-date" className="block text-xs font-bold text-[#0B192C] uppercase mb-1">
                 Data do Serviço
@@ -129,7 +128,7 @@ export default function BookingDetailsModal({
                 type="date"
                 value={editDate}
                 onChange={(e) => setEditDate(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
+                className="w-full px-3 py-2.5 sm:py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
               />
             </div>
 
@@ -142,21 +141,20 @@ export default function BookingDetailsModal({
                 type="time"
                 value={editTime}
                 onChange={(e) => setEditTime(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
+                className="w-full px-3 py-2.5 sm:py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
               />
             </div>
           </div>
 
-          {/* Editar Estado */}
-          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
             <label htmlFor="modal-edit-status" className="block text-xs font-bold text-[#0B192C] uppercase mb-1.5">
               Estado Atual
             </label>
             <select
               id="modal-edit-status"
               value={editStatus}
-              onChange={(e) => setEditStatus(e.target.value as any)}
-              className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
+              onChange={(e) => setEditStatus(e.target.value)}
+              className="w-full px-3.5 py-2.5 sm:py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
             >
               <option value="pending">🟡 Agendado / Pendente</option>
               <option value="in_progress">🔵 Em Execução</option>
@@ -166,29 +164,28 @@ export default function BookingDetailsModal({
           </div>
 
           <div>
-            <span className="block text-xs font-semibold text-slate-400 uppercase">Morada & Observações</span>
-            <p className="p-3 bg-slate-50 border border-slate-200 rounded-xl mt-1 text-slate-600 text-xs leading-relaxed">
+            <span className="block text-xs font-semibold text-slate-400 uppercase">Observações</span>
+            <p className="p-3 bg-slate-50 border border-slate-200 rounded-2xl mt-1 text-slate-600 text-xs leading-relaxed">
               {booking.notes || 'Sem observações adicionais registadas.'}
             </p>
           </div>
         </div>
 
-        {/* Botões de Ação */}
-        <footer className="flex justify-between items-center pt-6 border-t border-slate-100 mt-6">
+        <footer className="flex flex-col-reverse sm:flex-row justify-between items-center pt-6 border-t border-slate-100 mt-6 gap-3">
           <button
             type="button"
             disabled={deleting || updating}
             onClick={handleDelete}
-            className="px-4 py-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-semibold text-xs hover:bg-rose-100 transition disabled:opacity-50 cursor-pointer"
+            className="w-full sm:w-auto px-4 py-3 sm:py-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-semibold text-xs hover:bg-rose-100 transition disabled:opacity-50 cursor-pointer text-center"
           >
             {deleting ? 'A eliminar...' : '🗑️ Eliminar Serviço'}
           </button>
 
-          <div className="flex space-x-2">
+          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-medium text-xs hover:bg-slate-50 transition cursor-pointer"
+              className="w-full sm:w-auto px-4 py-3 sm:py-2.5 rounded-xl border border-slate-300 text-slate-600 font-medium text-xs hover:bg-slate-50 transition cursor-pointer text-center"
             >
               Cancelar
             </button>
@@ -196,7 +193,7 @@ export default function BookingDetailsModal({
               type="button"
               disabled={updating || deleting}
               onClick={handleUpdate}
-              className="px-5 py-2.5 rounded-xl bg-[#0B192C] text-white font-semibold text-xs hover:bg-slate-800 transition disabled:opacity-50 cursor-pointer"
+              className="w-full sm:w-auto px-5 py-3 sm:py-2.5 rounded-xl bg-[#0B192C] text-white font-semibold text-xs hover:bg-slate-800 transition disabled:opacity-50 cursor-pointer text-center shadow"
             >
               {updating ? 'A guardar...' : 'Guardar Alterações'}
             </button>

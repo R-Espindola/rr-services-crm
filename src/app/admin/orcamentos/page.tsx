@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
 
 export interface Client {
   id: string
@@ -180,13 +179,12 @@ export default function QuotesPage() {
     setNotes('')
   }
 
-  // Função para imprimir / descarregar PDF da Proposta
   function handlePrintPDF() {
     window.print()
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-[#0B192C]">
+    <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-slate-50 text-[#0B192C] p-4 sm:p-6 md:p-8">
       {/* Estilos para Impressão limpa do PDF */}
       <style jsx global>{`
         @media print {
@@ -210,148 +208,128 @@ export default function QuotesPage() {
         }
       `}</style>
 
-      {/* Cabeçalho */}
-      <header className="bg-[#0B192C] text-white py-4 px-8 shadow-md flex justify-between items-center border-b border-slate-800 no-print">
-        <div className="flex items-center space-x-3">
-          <div className="bg-[#00D4FF]/10 p-2 rounded-xl border border-[#00D4FF]/20">
-            <span className="text-2xl font-bold tracking-wider text-[#00D4FF]">R&R</span>
-          </div>
-          <div>
-            <span className="text-lg font-bold text-white block leading-none">Services</span>
-            <span className="text-xs text-slate-400">Propostas & Orçamentos Comerciais</span>
-          </div>
+      {/* CABEÇALHO & BOTÃO ADICIONAR */}
+      <div className="flex flex-col md:flex-row justify-between md:items-center mb-8 gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C]">Propostas & Orçamentos</h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">
+            Gere propostas comerciais com cálculo de margem interna, IVA e converta em agendamentos diretos.
+          </p>
         </div>
-        <Link
-          href="/dashboard"
-          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-bold transition border border-slate-700"
+
+        <button
+          onClick={() => setShowModal(true)}
+          className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-6 py-3.5 sm:py-3 rounded-xl shadow transition cursor-pointer flex items-center justify-center gap-2 border border-slate-700 text-xs sm:text-sm text-center"
         >
-          ← Voltar ao Painel
-        </Link>
-      </header>
+          <span>+ Criar Novo Orçamento</span>
+        </button>
+      </div>
 
-      <section className="max-w-7xl mx-auto px-6 py-10 no-print">
-        <div className="flex flex-col md:flex-row justify-between md:items-center mb-8 gap-4">
-          <div>
-            <h1 className="text-3xl font-extrabold text-[#0B192C]">Propostas & Orçamentos</h1>
-            <p className="text-slate-500 text-sm mt-1">
-              Gere propostas comerciais com cálculo de margem interna, IVA e converta em agendamentos diretos.
-            </p>
-          </div>
-
-          <button
-            onClick={() => setShowModal(true)}
-            className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-5 py-3 rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 border border-slate-700 text-xs"
-          >
-            <span>+</span> Criar Novo Orçamento
-          </button>
-        </div>
-
-        {/* Tabela de Orçamentos */}
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <th className="py-4 px-6">Cliente</th>
-                  <th className="py-4 px-6">Tipo & Tipologia</th>
-                  <th className="py-4 px-6">Frequência</th>
-                  <th className="py-4 px-6">Valor Total (c/ IVA)</th>
-                  <th className="py-4 px-6">Margem Lucro</th>
-                  <th className="py-4 px-6">Estado</th>
-                  <th className="py-4 px-6 text-right">Ações</th>
+      {/* TABELA DE ORÇAMENTOS */}
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[750px]">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <th className="py-4 px-6">Cliente</th>
+                <th className="py-4 px-6">Tipo & Tipologia</th>
+                <th className="py-4 px-6">Frequência</th>
+                <th className="py-4 px-6">Valor Total (c/ IVA)</th>
+                <th className="py-4 px-6">Margem Lucro</th>
+                <th className="py-4 px-6">Estado</th>
+                <th className="py-4 px-6 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-sm">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-slate-400">A carregar propostas comerciais...</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
-                {loading ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-12 text-slate-400">A carregar propostas comerciais...</td>
-                  </tr>
-                ) : quotes.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-16 text-slate-400">
-                      Nenhum orçamento criado. Clique no botão acima para criar a primeira proposta.
+              ) : quotes.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-16 text-slate-400">
+                    Nenhum orçamento criado. Clique no botão acima para criar a primeira proposta.
+                  </td>
+                </tr>
+              ) : (
+                quotes.map((q) => (
+                  <tr key={q.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-4 px-6 font-bold text-[#0B192C]">
+                      {q.clients?.name || 'Cliente'}
+                      <div className="text-xs font-normal text-slate-400">{q.clients?.phone}</div>
+                    </td>
+                    <td className="py-4 px-6 text-slate-700 font-medium text-xs sm:text-sm">
+                      {q.service_type}
+                      <span className="text-xs font-bold text-[#00D4FF] block">{q.typology}</span>
+                    </td>
+                    <td className="py-4 px-6 text-slate-600 text-xs font-medium">{q.frequency}</td>
+                    <td className="py-4 px-6 font-extrabold text-[#0B192C]">
+                      {Number(q.total || 0).toFixed(2)} €
+                    </td>
+                    <td className="py-4 px-6 font-bold text-emerald-600 text-xs">
+                      {q.margin_percentage || 0}%
+                    </td>
+                    <td className="py-4 px-6">
+                      <select
+                        value={q.status}
+                        onChange={(e) => handleUpdateQuoteStatus(q.id, e.target.value)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold outline-none cursor-pointer border shadow-sm ${
+                          q.status === 'approved'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : q.status === 'sent'
+                            ? 'bg-sky-50 text-sky-700 border-sky-200'
+                            : q.status === 'rejected'
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}
+                      >
+                        <option value="pending">Pendente</option>
+                        <option value="sent">Enviado</option>
+                        <option value="approved">Aprovado</option>
+                        <option value="rejected">Recusado</option>
+                      </select>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => setViewingQuote(q)}
+                          className="bg-slate-100 hover:bg-[#00D4FF]/10 hover:text-[#0B192C] text-slate-700 font-bold px-3.5 py-2 rounded-xl border border-slate-200 text-xs transition cursor-pointer flex items-center gap-1"
+                        >
+                          👁️ Ver PDF
+                        </button>
+                        <button
+                          onClick={() => handleConvertToOrder(q)}
+                          className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer"
+                        >
+                          ⚡ Agendar
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ) : (
-                  quotes.map((q) => (
-                    <tr key={q.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-4 px-6 font-bold text-[#0B192C]">
-                        {q.clients?.name || 'Cliente'}
-                        <div className="text-xs font-normal text-slate-400">{q.clients?.phone}</div>
-                      </td>
-                      <td className="py-4 px-6 text-slate-700 font-medium">
-                        {q.service_type}
-                        <span className="text-xs font-bold text-[#00D4FF] block">{q.typology}</span>
-                      </td>
-                      <td className="py-4 px-6 text-slate-600 text-xs font-medium">{q.frequency}</td>
-                      <td className="py-4 px-6 font-extrabold text-[#0B192C]">
-                        {Number(q.total || 0).toFixed(2)} €
-                      </td>
-                      <td className="py-4 px-6 font-bold text-emerald-600 text-xs">
-                        {q.margin_percentage || 0}%
-                      </td>
-                      <td className="py-4 px-6">
-                        <select
-                          value={q.status}
-                          onChange={(e) => handleUpdateQuoteStatus(q.id, e.target.value)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold outline-none cursor-pointer border shadow-sm ${
-                            q.status === 'approved'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : q.status === 'sent'
-                              ? 'bg-sky-50 text-sky-700 border-sky-200'
-                              : q.status === 'rejected'
-                              ? 'bg-red-50 text-red-700 border-red-200'
-                              : 'bg-amber-50 text-amber-700 border-amber-200'
-                          }`}
-                        >
-                          <option value="pending">Pendente</option>
-                          <option value="sent">Enviado</option>
-                          <option value="approved">Aprovado</option>
-                          <option value="rejected">Recusado</option>
-                        </select>
-                      </td>
-                      <td className="py-4 px-6 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => setViewingQuote(q)}
-                            className="bg-slate-100 hover:bg-[#00D4FF]/10 hover:text-[#0B192C] text-slate-700 font-bold px-3 py-1.5 rounded-lg border border-slate-200 text-xs transition cursor-pointer flex items-center gap-1"
-                          >
-                            👁️ Ver PDF
-                          </button>
-                          <button
-                            onClick={() => handleConvertToOrder(q)}
-                            className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer"
-                          >
-                            ⚡ Agendar
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      </section>
+      </div>
 
-      {/* MODAL / FOLHA FORMAL DE PROPOSTA COMERCIAL E GERADOR PDF */}
+      {/* MODAL / FOLHA FORMAL DE PROPOSTA COMERCIAL E GERADOR PDF (Adaptado para iPhone/Mobile) */}
       {viewingQuote && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto my-auto">
             {/* AÇÕES NO TOPO */}
             <div className="flex justify-between items-center mb-6 no-print border-b border-slate-100 pb-4">
               <span className="text-xs font-bold text-slate-400 uppercase">Proposta Comercial Formal</span>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                 <button
                   onClick={handlePrintPDF}
-                  className="bg-[#0B192C] hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md cursor-pointer"
+                  className="bg-[#0B192C] hover:bg-slate-800 text-white px-4 py-3 sm:py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
                 >
-                  📄 Imprimir / Guardar em PDF
+                  📄 Imprimir / Guardar PDF
                 </button>
                 <button
                   onClick={closeModal}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-3 sm:py-2 rounded-xl text-xs font-bold transition cursor-pointer text-center"
                 >
                   ✕ Fechar
                 </button>
@@ -359,9 +337,9 @@ export default function QuotesPage() {
             </div>
 
             {/* ÁREA FORMAL IMPRESSA (PDF) */}
-            <div id="print-area" className="p-6 bg-white text-[#0B192C] space-y-6 rounded-2xl border border-slate-200">
+            <div id="print-area" className="p-4 sm:p-6 bg-white text-[#0B192C] space-y-6 rounded-2xl border border-slate-200">
               {/* CABEÇALHO DO DOCUMENTO */}
-              <div className="flex justify-between items-start border-b border-slate-200 pb-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-6 gap-4">
                 <div>
                   <div className="flex items-center space-x-2 mb-2">
                     <span className="text-2xl font-black text-[#00D4FF] bg-[#0B192C] px-3 py-1 rounded-xl">R&R</span>
@@ -370,7 +348,7 @@ export default function QuotesPage() {
                   <p className="text-xs text-slate-500">Serviços Profissionais de Limpeza & Manutenção</p>
                   <p className="text-xs text-slate-500">Portugal | Contacto: +351 969 177 571</p>
                 </div>
-                <div className="text-right">
+                <div className="text-left sm:text-right">
                   <h3 className="text-lg font-black text-[#0B192C] uppercase">Orçamento</h3>
                   <p className="text-xs font-bold text-[#00D4FF]">#{viewingQuote.id.substring(0, 8).toUpperCase()}</p>
                   <p className="text-xs text-slate-400 mt-1">Data: {new Date(viewingQuote.created_at).toLocaleDateString('pt-PT')}</p>
@@ -378,7 +356,7 @@ export default function QuotesPage() {
               </div>
 
               {/* DADOS DO CLIENTE */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase block mb-1">Cliente Destinatário</span>
                 <p className="text-sm font-bold text-[#0B192C]">{viewingQuote.clients?.name || 'Cliente'}</p>
                 <p className="text-xs text-slate-600">📞 {viewingQuote.clients?.phone}</p>
@@ -389,8 +367,8 @@ export default function QuotesPage() {
               </div>
 
               {/* DETALHES DO SERVIÇO */}
-              <div>
-                <table className="w-full text-left text-xs border-collapse">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse min-w-[500px]">
                   <thead>
                     <tr className="bg-[#0B192C] text-white font-bold uppercase text-[10px]">
                       <th className="py-3 px-4 rounded-l-xl">Descrição do Serviço</th>
@@ -412,7 +390,7 @@ export default function QuotesPage() {
 
               {/* RESUMO DE VALORES */}
               <div className="flex justify-end pt-2">
-                <div className="w-64 space-y-2 text-xs">
+                <div className="w-full sm:w-64 space-y-2 text-xs">
                   <div className="flex justify-between text-slate-600">
                     <span>Subtotal:</span>
                     <span className="font-bold">{Number(viewingQuote.subtotal || 0).toFixed(2)} €</span>
@@ -420,7 +398,7 @@ export default function QuotesPage() {
                   {Number(viewingQuote.discount || 0) > 0 && (
                     <div className="flex justify-between text-red-600 font-semibold">
                       <span>Desconto Especial:</span>
-                      <span>- {Number(viewingQuote.discount).toFixed(2)} €</span>
+                      <span>{Number(viewingQuote.discount).toFixed(2)} €</span>
                     </div>
                   )}
                   <div className="flex justify-between text-slate-600">
@@ -431,7 +409,7 @@ export default function QuotesPage() {
                   </div>
                   <div className="flex justify-between text-sm font-black text-[#0B192C] border-t border-slate-300 pt-2">
                     <span>Total da Proposta:</span>
-                    <span className="text-[#00D4FF] bg-[#0B192C] px-2 py-0.5 rounded-lg">{Number(viewingQuote.total || 0).toFixed(2)} €</span>
+                    <span className="text-[#00D4FF] bg-[#0B192C] px-2.5 py-1 rounded-lg">{Number(viewingQuote.total || 0).toFixed(2)} €</span>
                   </div>
                 </div>
               </div>
@@ -453,16 +431,16 @@ export default function QuotesPage() {
         </div>
       )}
 
-      {/* MODAL PARA CRIAR NOVO ORÇAMENTO */}
+      {/* MODAL PARA CRIAR NOVO ORÇAMENTO (Adaptado para iPhone/Mobile) */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto my-auto">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h2 className="text-2xl font-bold text-[#0B192C]">Criar Nova Proposta Comercial</h2>
+                <h2 className="text-xl sm:text-2xl font-bold text-[#0B192C]">Criar Nova Proposta Comercial</h2>
                 <p className="text-xs text-slate-500 mt-1">Defina os valores do serviço e analise a margem de lucro interna.</p>
               </div>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-xl font-bold p-2">✕</button>
             </div>
 
             <form onSubmit={handleCreateQuote} className="space-y-4">
@@ -472,7 +450,7 @@ export default function QuotesPage() {
                   required
                   value={selectedClientId}
                   onChange={(e) => setSelectedClientId(e.target.value)}
-                  className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium"
+                  className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium"
                 >
                   <option value="">Selecione um cliente...</option>
                   {clients.map((c) => (
@@ -487,7 +465,7 @@ export default function QuotesPage() {
                   <select
                     value={serviceType}
                     onChange={(e) => setServiceType(e.target.value)}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium"
+                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium"
                   >
                     <option value="Limpeza Residencial">Limpeza Residencial</option>
                     <option value="Limpeza Profunda">Limpeza Profunda</option>
@@ -503,7 +481,7 @@ export default function QuotesPage() {
                     value={typology}
                     onChange={(e) => setTypology(e.target.value)}
                     placeholder="Ex: T2, T3"
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium"
+                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium"
                   />
                 </div>
 
@@ -512,7 +490,7 @@ export default function QuotesPage() {
                   <select
                     value={frequency}
                     onChange={(e) => setFrequency(e.target.value)}
-                    className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium"
+                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium"
                   >
                     <option value="Pontual">Pontual</option>
                     <option value="Semanal">Semanal</option>
@@ -522,7 +500,7 @@ export default function QuotesPage() {
                 </div>
               </div>
 
-              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+              <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-4">
                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cálculo Financeiro & Custos Internos</h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -535,7 +513,7 @@ export default function QuotesPage() {
                       value={subtotal}
                       onChange={(e) => setSubtotal(e.target.value)}
                       placeholder="Ex: 100.00"
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-sm font-bold"
+                      className="w-full px-4 py-3.5 sm:py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-base sm:text-sm font-bold"
                     />
                   </div>
 
@@ -546,7 +524,7 @@ export default function QuotesPage() {
                       step="0.01"
                       value={discount}
                       onChange={(e) => setDiscount(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-sm font-bold"
+                      className="w-full px-4 py-3.5 sm:py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-base sm:text-sm font-bold"
                     />
                   </div>
 
@@ -556,7 +534,7 @@ export default function QuotesPage() {
                       type="number"
                       value={vatRate}
                       onChange={(e) => setVatRate(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-sm font-bold"
+                      className="w-full px-4 py-3.5 sm:py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-base sm:text-sm font-bold"
                     />
                   </div>
                 </div>
@@ -570,18 +548,18 @@ export default function QuotesPage() {
                       value={estimatedCost}
                       onChange={(e) => setEstimatedCost(e.target.value)}
                       placeholder="Ex: 40.00"
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-sm font-bold"
+                      className="w-full px-4 py-3.5 sm:py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-base sm:text-sm font-bold"
                     />
                   </div>
 
                   <div className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center">
                     <div>
                       <span className="text-[10px] font-bold text-slate-400 uppercase block">Margem Bruta</span>
-                      <span className="text-lg font-extrabold text-emerald-600">{profitMargin}%</span>
+                      <span className="text-base sm:text-lg font-extrabold text-emerald-600">{profitMargin}%</span>
                     </div>
                     <div className="text-right">
                       <span className="text-[10px] font-bold text-slate-400 uppercase block">Total c/ IVA</span>
-                      <span className="text-lg font-extrabold text-[#0B192C]">{totalVal.toFixed(2)} €</span>
+                      <span className="text-base sm:text-lg font-extrabold text-[#0B192C]">{totalVal.toFixed(2)} €</span>
                     </div>
                   </div>
                 </div>
@@ -593,22 +571,22 @@ export default function QuotesPage() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Inclui produtos e equipamentos..."
-                  className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-medium h-20"
+                  className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium h-20"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-5 py-3 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold text-sm transition"
+                  className="w-full sm:w-auto px-5 py-3.5 sm:py-3 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold text-xs sm:text-sm transition text-center"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-7 py-3 bg-[#0B192C] hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50 cursor-pointer"
+                  className="w-full sm:w-auto px-7 py-3.5 sm:py-3 bg-[#0B192C] hover:bg-slate-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 cursor-pointer text-center"
                 >
                   {submitting ? 'A guardar...' : 'Gerar Proposta Comercial'}
                 </button>
