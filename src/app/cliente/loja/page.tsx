@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import ClientBottomNav from "@/app/cliente/ClientBottomNav";
 
 export interface Product {
   id: string
@@ -30,15 +29,15 @@ export default function ClientStorePage() {
 
   async function fetchStoreData() {
     setLoading(true)
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-    if (session?.user?.email) {
+    if (!authError && user) {
       const { data: clientData } = await supabase
         .from('clients')
         .select('*')
-        .eq('email', session.user.email)
+        .eq('auth_user_id', user.id)
         .single()
-      
+
       if (clientData) setCurrentClient(clientData)
     }
 
@@ -87,24 +86,8 @@ export default function ClientStorePage() {
   }
 
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] pb-[calc(6rem+env(safe-area-inset-bottom))] text-[#0B192C] xl:pb-0">
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-[#0B192C] px-4 py-3 text-white shadow-lg sm:px-6 lg:px-8">
-        <div className="flex items-center space-x-3">
-          <div className="bg-[#00D4FF]/10 p-2 rounded-xl border border-[#00D4FF]/20">
-            <span className="text-2xl font-bold tracking-wider text-[#00D4FF]">R&R</span>
-          </div>
-          <div>
-            <span className="text-lg font-bold text-white block leading-none">Services</span>
-            <span className="text-xs text-slate-400">Loja Completa de Detergentes & Produtos</span>
-          </div>
-        </div>
-        <Link
-          href="/cliente"
-          className="inline-flex min-h-11 items-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10 sm:text-sm"
-        >
-          ← Voltar à Área de Cliente
-        </Link>
-      </header>
+    <main className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] pb-8 text-[#0B192C] ">
+
 
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-9 lg:px-8">
         <div className="mb-7 sm:mb-9">
@@ -126,7 +109,7 @@ export default function ClientStorePage() {
             {products.map((prod) => (
               <div key={prod.id} className="group flex min-w-0 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg sm:p-5">
                 <div>
-                  <div className="mb-3 flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-slate-100 bg-slate-50 sm:mb-4 sm:h-40 sm:rounded-2xl">
+                  <div className="mb-3 flex h-28 w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 sm:mb-4 sm:h-40 sm:rounded-2xl">
                     {prod.image_url ? (
                       <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover" />
                     ) : (
@@ -147,7 +130,7 @@ export default function ClientStorePage() {
                       setSelectedProduct(prod)
                       setQuantity(1)
                     }}
-                    className="min-h-11 rounded-xl bg-[#0B192C] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 sm:px-4"
+                    className="min-h-11 rounded-2xl bg-[#0B192C] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 sm:px-4"
                   >
                     Encomendar
                   </button>
@@ -164,7 +147,7 @@ export default function ClientStorePage() {
           <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-[#0B192C]">Confirmar Encomenda</h3>
-              <button onClick={() => setSelectedProduct(null)} aria-label="Fechar" className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">✕</button>
+              <button onClick={() => setSelectedProduct(null)} aria-label="Fechar" className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">✕</button>
             </div>
 
             <form onSubmit={handleOrderSubmit} className="space-y-4">
@@ -181,11 +164,11 @@ export default function ClientStorePage() {
                   max={selectedProduct.stock_quantity}
                   value={quantity}
                   onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-bold"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-2xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm font-bold"
                 />
               </div>
 
-              <div className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center text-xs font-bold">
+              <div className="bg-white p-3 rounded-2xl border border-slate-200 flex justify-between items-center text-xs font-bold">
                 <span className="text-slate-500">Total a Pagar:</span>
                 <span className="text-base text-[#00D4FF] bg-[#0B192C] px-3 py-1 rounded-lg">
                   {(Number(selectedProduct.price) * quantity).toFixed(2)} €
@@ -196,14 +179,14 @@ export default function ClientStorePage() {
                 <button
                   type="button"
                   onClick={() => setSelectedProduct(null)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-bold text-xs"
+                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-2xl font-bold text-xs"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2.5 bg-[#0B192C] hover:bg-slate-800 text-white rounded-xl font-bold text-xs shadow-md transition"
+                  className="px-6 py-2.5 bg-[#0B192C] hover:bg-slate-800 text-white rounded-2xl font-bold text-xs shadow-md transition"
                 >
                   {submitting ? 'A submeter...' : 'Confirmar Encomenda'}
                 </button>
@@ -212,7 +195,6 @@ export default function ClientStorePage() {
           </div>
         </div>
       )}
-      <ClientBottomNav />
     </main>
   )
 }

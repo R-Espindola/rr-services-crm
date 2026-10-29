@@ -7,9 +7,13 @@ export interface Client {
   id: string
   name: string
   phone: string
-  email: string
+  email: string | null
   address?: string
+  auth_user_id?: string | null
 }
+
+type AccessCredentials = { clientId: string; phone: string; loginEmail: string; password: string }
+type ClientOrder = { id: string; service_type: string; total_amount: number | string }
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
@@ -18,8 +22,10 @@ export default function ClientsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [viewingClient, setViewingClient] = useState<Client | null>(null)
-  const [clientOrders, setClientOrders] = useState<any[]>([])
+  const [clientOrders, setClientOrders] = useState<ClientOrder[]>([])
   const [gerandoAcesso, setGerandoAcesso] = useState(false)
+  const [accessCredentials, setAccessCredentials] = useState<AccessCredentials | null>(null)
+  const [accessFeedback, setAccessFeedback] = useState('')
 
   // Campos do formulário de novo cliente
   const [name, setName] = useState('')
@@ -40,9 +46,11 @@ export default function ClientsPage() {
   }
 
   async function handleOpenView(client: Client) {
+    setAccessCredentials(null)
+    setAccessFeedback('')
     setViewingClient(client)
-    const { data } = await supabase.from('orders').select('*').eq('client_id', client.id)
-    if (data) setClientOrders(data)
+    const { data } = await supabase.from('orders').select('id, service_type, total_amount').eq('client_id', client.id)
+    if (data) setClientOrders(data as ClientOrder[])
   }
 
   async function handleCreateClient(e: React.FormEvent) {
@@ -76,7 +84,7 @@ export default function ClientsPage() {
     setEditingClient(client)
     setName(client.name)
     setPhone(client.phone)
-    setEmail(client.email)
+    setEmail(client.email ?? '')
     setAddress(client.address || '')
     setViewingClient(null)
   }
@@ -111,46 +119,63 @@ export default function ClientsPage() {
   }
 
   async function handleGerarAcessoWhatsApp(client: Client) {
-    if (!confirm(`Deseja gerar credenciais de acesso para ${client.name} e enviar por WhatsApp?`)) {
+    if (!confirm(`Deseja criar e vincular o acesso ao portal para ${client.name}?`)) {
       return
     }
 
     setGerandoAcesso(true)
-    const cleanPhone = client.phone.replace(/\D/g, '')
-    const phoneWithCountryCode = cleanPhone.startsWith('351') ? cleanPhone : `351${cleanPhone}`
+    setAccessFeedback('')
 
     try {
       const response = await fetch('/api/admin/criar-cliente', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          name: client.name, 
-          phone: cleanPhone, 
-          email: client.email, 
-          address: client.address || '' 
-        }),
+        body: JSON.stringify({ clientId: client.id }),
       })
 
-      const result = await response.json()
+      const result = await response.json() as { error?: string; clientId?: string; userId?: string; phone?: string; loginEmail?: string; password?: string }
 
       if (!response.ok) {
-        alert('Aviso / Erro: ' + (result.error || 'Não foi possível gerar acesso.'))
-        setGerandoAcesso(false)
+        setAccessFeedback(result.error || 'Não foi possível gerar acesso.')
         return
       }
 
-      const passwordTemp = result.password
-
-      const mensagemWhatsApp = `Olá ${client.name}! A sua conta na R&R Services foi ativada. 🧹✨\n\nPode aceder ao Portal do Cliente em: ${window.location.origin}/login\n\nOs seus dados de acesso:\nE-mail: ${client.email}\nPalavra-passe temporária: ${passwordTemp}\n\nRecomendamos que altere a sua palavra-passe após o primeiro acesso.`
-
-      const linkWhatsApp = `https://api.whatsapp.com/send?phone=${phoneWithCountryCode}&text=${encodeURIComponent(mensagemWhatsApp)}`
-      
-      window.open(linkWhatsApp, '_blank')
-    } catch (err) {
-      alert('Ocorreu um erro de conexão ao gerar o acesso.')
+      if (!result.clientId || !result.userId || !result.phone || !result.loginEmail || !result.password) {
+        setAccessFeedback('A conta foi criada, mas a resposta veio incompleta. Contacte o suporte antes de repetir a operação.')
+        return
+      }
+      const credentials = { clientId: result.clientId, phone: result.phone, loginEmail: result.loginEmail, password: result.password }
+      setAccessCredentials(credentials)
+      setAccessFeedback('Acesso criado e vinculado. Copie as credenciais ou abra o WhatsApp para as enviar.')
+      const linkedClient = { ...client, auth_user_id: result.userId }
+      setClients((current) => current.map((item) => item.id === client.id ? linkedClient : item))
+      setViewingClient(linkedClient)
+    } catch {
+      setAccessFeedback('Ocorreu um erro de ligação ao gerar o acesso. Confirme se o cliente já recebeu credenciais antes de repetir.')
     } finally {
       setGerandoAcesso(false)
     }
+  }
+
+  function buildAccessMessage(credentials: AccessCredentials, client: Client) {
+    return `Olá ${client.name}! O seu acesso ao Portal do Cliente R&R Services está ativo.\n\nAceda a: ${window.location.origin}/login?next=%2Fcliente\n\nTelemóvel (utilizador): ${credentials.phone}\nE-mail de acesso alternativo: ${credentials.loginEmail}\nPalavra-passe temporária: ${credentials.password}\n\nGuarde estes dados num local seguro.`
+  }
+
+  async function copyAccessCredentials(client: Client) {
+    if (!accessCredentials || accessCredentials.clientId !== client.id) return
+    try {
+      await navigator.clipboard.writeText(buildAccessMessage(accessCredentials, client))
+      setAccessFeedback('Dados de acesso copiados.')
+    } catch {
+      setAccessFeedback('Não foi possível copiar automaticamente. Selecione e copie os dados apresentados.')
+    }
+  }
+
+  function sendAccessByWhatsApp(client: Client) {
+    if (!accessCredentials || accessCredentials.clientId !== client.id) return
+    const phone = accessCredentials.phone.replace(/\D/g, '')
+    const message = encodeURIComponent(buildAccessMessage(accessCredentials, client))
+    window.open(`https://wa.me/${phone}?text=${message}`, '_blank', 'noopener,noreferrer')
   }
 
   async function handleDeleteClient(id: string, clientName: string) {
@@ -170,8 +195,9 @@ export default function ClientsPage() {
   const filtered = clients.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     c.phone.includes(searchTerm) ||
-    c.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (c.email ?? '').toLowerCase().includes(searchTerm.toLowerCase())
   )
+  const accessFeedbackIsError = /não foi possível|ocorreu|inválido|já tem|precisa de|confirme/i.test(accessFeedback)
 
   return (
     <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-slate-50 text-[#0B192C] p-4 sm:p-6 md:p-8">
@@ -323,15 +349,27 @@ export default function ClientsPage() {
 
             <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col gap-2">
               <span className="text-xs font-bold text-emerald-800">Acesso ao Portal do Cliente</span>
-              <p className="text-[11px] text-emerald-700">Clique abaixo para gerar uma palavra-passe temporária e enviar os dados de login por WhatsApp.</p>
-              <button
-                onClick={() => handleGerarAcessoWhatsApp(viewingClient)}
-                disabled={gerandoAcesso}
-                className="mt-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-3.5 sm:py-2.5 px-4 rounded-xl shadow transition cursor-pointer flex items-center justify-center gap-2"
-              >
-                <span>💬</span>
-                <span>{gerandoAcesso ? 'A gerar acesso...' : 'Gerar & Enviar Acesso por WhatsApp'}</span>
-              </button>
+              {viewingClient.auth_user_id ? <p className="text-[11px] font-semibold text-emerald-800">Este cliente já tem uma conta vinculada. Por segurança, a palavra-passe existente não pode ser consultada nem gerada novamente aqui.</p> : <>
+                <p className="text-[11px] text-emerald-700">Será criada uma palavra-passe temporária e a conta ficará vinculada a esta ficha. Confirme o número antes de partilhar as credenciais.</p>
+                <button
+                  type="button"
+                  onClick={() => void handleGerarAcessoWhatsApp(viewingClient)}
+                  disabled={gerandoAcesso}
+                  className="mt-1 min-h-11 rounded-2xl bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {gerandoAcesso ? 'A gerar acesso...' : 'Criar acesso do cliente'}
+                </button>
+              </>}
+              {accessCredentials?.clientId === viewingClient.id && <div className="mt-2 rounded-xl border border-emerald-200 bg-white p-3 text-xs text-slate-700">
+                <p><strong>Telemóvel de acesso:</strong> {accessCredentials.phone}</p>
+                <p className="mt-1 break-all"><strong>E-mail alternativo:</strong> {accessCredentials.loginEmail}</p>
+                <p className="mt-1 break-all"><strong>Palavra-passe temporária:</strong> {accessCredentials.password}</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={() => void copyAccessCredentials(viewingClient)} className="min-h-11 rounded-2xl border border-slate-200 px-3 font-bold text-slate-700 hover:bg-slate-50">Copiar dados</button>
+                  <button type="button" onClick={() => sendAccessByWhatsApp(viewingClient)} className="min-h-11 rounded-2xl bg-emerald-600 px-3 font-bold text-white hover:bg-emerald-700">Enviar via WhatsApp</button>
+                </div>
+              </div>}
+              {accessFeedback && <p role={accessFeedbackIsError ? 'alert' : 'status'} className={`text-xs font-semibold ${accessFeedbackIsError ? 'text-rose-700' : 'text-emerald-900'}`}>{accessFeedback}</p>}
             </div>
 
             <div className="bg-slate-50 p-4 rounded-2xl text-xs space-y-2">

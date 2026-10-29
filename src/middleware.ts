@@ -25,6 +25,7 @@ export async function middleware(request: NextRequest) {
   const workerRoute = path.startsWith('/trabalhador')
   const protectedRoute = adminRoute || clientRoute || workerRoute
   const loginRoute = path === '/login'
+  const forceLogin = loginRoute && request.nextUrl.searchParams.get('force') === '1'
   if (!protectedRoute && !loginRoute) return response
 
   const { data: { user }, error } = await supabase.auth.getUser()
@@ -41,7 +42,7 @@ export async function middleware(request: NextRequest) {
   const { data: profile, error: profileError } = await supabase
     .from('clients')
     .select('role')
-    .eq('email', user.email ?? '')
+    .eq('auth_user_id', user.id)
     .maybeSingle()
 
   const { data: workerProfile, error: workerError } = await supabase
@@ -74,7 +75,7 @@ export async function middleware(request: NextRequest) {
     url.search = ''
     return NextResponse.redirect(url)
   }
-  if (loginRoute) {
+  if (loginRoute && !forceLogin) {
     const url = request.nextUrl.clone()
     url.pathname = role === 'admin' ? '/admin' : role === 'worker' ? '/trabalhador/agenda' : '/cliente'
     url.search = ''

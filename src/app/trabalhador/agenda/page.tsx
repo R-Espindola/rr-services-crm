@@ -52,6 +52,12 @@ const formatDuration = (minutes: number) => `${Math.floor(minutes / 60)}h ${minu
 const completedMinutes = (order: Order) => order.duration_minutes ?? (order.started_at && order.completed_at
   ? Math.max(0, Math.floor((new Date(order.completed_at).getTime() - new Date(order.started_at).getTime() - (order.paused_duration_seconds || 0) * 1000) / 60_000))
   : 0)
+const whatsappNumber = (value: string) => {
+  let digits = value.replace(/\D/g, '')
+  if (digits.startsWith('00')) digits = digits.slice(2)
+  if (!digits.startsWith('351')) digits = `351${digits.replace(/^0/, '')}`
+  return digits
+}
 
 export default function WorkerAgendaPage() {
   const router = useRouter()
@@ -64,8 +70,10 @@ export default function WorkerAgendaPage() {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [clock, setClock] = useState(0)
+  const [agendaView, setAgendaView] = useState<'today' | 'week' | 'month'>('today')
+  const [newTaskDraft, setNewTaskDraft] = useState<Record<string, string>>({})
 
-  const loadToday = useCallback(async () => {
+  const loadAgenda = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -83,11 +91,21 @@ export default function WorkerAgendaPage() {
       }
       setWorkerName(worker.display_name)
 
-      // Use the device's local calendar day to include the complete workday.
+      // Filter calendar periods in the device's local timezone (normally Europe/Lisbon).
       const start = new Date()
       start.setHours(0, 0, 0, 0)
       const end = new Date(start)
-      end.setDate(end.getDate() + 1)
+      if (agendaView === 'today') {
+        end.setDate(end.getDate() + 1)
+      } else if (agendaView === 'week') {
+        start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
+        end.setTime(start.getTime())
+        end.setDate(end.getDate() + 7)
+      } else {
+        start.setDate(1)
+        end.setTime(start.getTime())
+        end.setMonth(end.getMonth() + 1)
+      }
       const { data, error: ordersError } = await supabase.from('orders')
         .select('id, client_id, service_type, scheduled_date, status, notes, started_at, completed_at, duration_minutes, paused_at, paused_duration_seconds, worker_checklist, before_photos, after_photos, clients(name, address, phone)')
         .eq('worker_user_id', user.id)
@@ -120,12 +138,12 @@ export default function WorkerAgendaPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [agendaView])
 
   useEffect(() => {
-    const request = window.setTimeout(() => { void loadToday() }, 0)
+    const request = window.setTimeout(() => { void loadAgenda() }, 0)
     return () => window.clearTimeout(request)
-  }, [loadToday])
+  }, [loadAgenda])
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 1000)
     return () => window.clearInterval(timer)
@@ -146,9 +164,28 @@ export default function WorkerAgendaPage() {
       const { error: rpcError } = await supabase.rpc(rpcName, { p_order_id: order.id })
       if (rpcError) throw rpcError
       setNotice({ start: 'Limpeza iniciada. Bom trabalho!', pause: 'Cronómetro pausado.', resume: 'Cronómetro retomado.', finish: 'Limpeza concluída com sucesso.' }[action])
-      await loadToday()
+      await loadAgenda()
+    } catch (cause) {
+      const rpcMessage = typeof cause === 'object' && cause !== null && 'message' in cause ? String(cause.message) : ''
+      setError(action === 'start' && rpcMessage.includes('start window opens 5 minutes')
+        ? 'Só poderá iniciar a limpeza a partir de 5 minutos antes do horário agendado.'
+        : 'Não foi possível atualizar o estado da limpeza. Atualize a página e tente novamente.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function saveChecklist(order: Order, checklist: ChecklistItem[]) {
+    setBusy(`checklist-${order.id}`)
+    setError('')
+    try {
+      const { error: rpcError } = await supabase.rpc('worker_save_checklist', { p_order_id: order.id, p_checklist: checklist })
+      if (rpcError) throw rpcError
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, worker_checklist: checklist } : item))
+      return true
     } catch {
-      setError('Não foi possível atualizar o estado da limpeza. Atualize a página e tente novamente.')
+      setError('Não foi possível guardar a checklist. Tente novamente.')
+      return false
     } finally {
       setBusy(null)
     }
@@ -156,16 +193,20 @@ export default function WorkerAgendaPage() {
 
   async function toggleTask(order: Order, taskId: string) {
     const checklist = (order.worker_checklist ?? []).map((task) => task.id === taskId ? { ...task, done: !task.done } : task)
-    setBusy(`checklist-${order.id}`)
-    try {
-      const { error: rpcError } = await supabase.rpc('worker_save_checklist', { p_order_id: order.id, p_checklist: checklist })
-      if (rpcError) throw rpcError
-      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, worker_checklist: checklist } : item))
-    } catch {
-      setError('Não foi possível guardar a checklist. Tente novamente.')
-    } finally {
-      setBusy(null)
+    await saveChecklist(order, checklist)
+  }
+
+  async function addChecklistTask(event: React.FormEvent<HTMLFormElement>, order: Order) {
+    event.preventDefault()
+    const label = (newTaskDraft[order.id] ?? '').trim()
+    const checklist = order.worker_checklist ?? []
+    if (!label) return
+    if (checklist.length >= 50) {
+      setError('O checklist atingiu o limite de 50 tarefas.')
+      return
     }
+    const saved = await saveChecklist(order, [...checklist, { id: crypto.randomUUID(), label, done: false }])
+    if (saved) setNewTaskDraft((current) => ({ ...current, [order.id]: '' }))
   }
 
   async function uploadPhotos(order: Order, kind: 'before' | 'after', files: FileList | null) {
@@ -189,7 +230,7 @@ export default function WorkerAgendaPage() {
         }
       }
       setNotice('Fotografia guardada com sucesso.')
-      await loadToday()
+      await loadAgenda()
     } catch (cause) {
       setError(cause instanceof Error && cause.message === 'Escolha imagens até 10 MB.' ? cause.message : 'Não foi possível enviar as fotografias. Confirme a ligação e tente novamente.')
     } finally {
@@ -231,25 +272,32 @@ export default function WorkerAgendaPage() {
         <main className="min-w-0 px-4 pb-24 pt-6 sm:px-6 sm:py-8 lg:px-8 lg:py-9">
           <section className="relative isolate overflow-hidden rounded-[28px] bg-[#0B192C] p-6 text-white shadow-xl shadow-slate-900/10 sm:p-8 lg:p-10">
             <div className="absolute -right-12 -top-24 -z-10 h-72 w-72 rounded-full bg-[#00D4FF]/15 blur-3xl" />
-            <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end"><div className="max-w-2xl"><span className="inline-flex items-center gap-2 rounded-full border border-[#00D4FF]/25 bg-[#00D4FF]/10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#70E8FF]"><span className="h-1.5 w-1.5 rounded-full bg-[#00D4FF]" /> Agenda diária</span><h1 className="mt-5 text-3xl font-black tracking-tight sm:text-4xl">Bom dia, {workerName.split(/\s+/)[0]}<span className="text-[#00D4FF]">.</span></h1><p className="mt-3 text-sm capitalize leading-6 text-slate-300 sm:text-base">{formatDate(new Date().toISOString())}. Aqui está o plano das suas visitas.</p></div><button type="button" onClick={() => void loadToday()} className="inline-flex min-h-12 items-center justify-center gap-2 self-start rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-[#0B192C] transition hover:bg-[#00D4FF] sm:self-auto"><span aria-hidden="true">↻</span> Atualizar agenda</button></div>
+            <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end"><div className="max-w-2xl"><span className="inline-flex items-center gap-2 rounded-full border border-[#00D4FF]/25 bg-[#00D4FF]/10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#70E8FF]"><span className="h-1.5 w-1.5 rounded-full bg-[#00D4FF]" /> Agenda diária</span><h1 className="mt-5 text-3xl font-black tracking-tight sm:text-4xl">Bom dia, {workerName.split(/\s+/)[0]}<span className="text-[#00D4FF]">.</span></h1><p className="mt-3 text-sm capitalize leading-6 text-slate-300 sm:text-base">{formatDate(new Date().toISOString())}. Aqui está o plano das suas visitas.</p></div><button type="button" onClick={() => void loadAgenda()} className="inline-flex min-h-12 items-center justify-center gap-2 self-start rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-[#0B192C] transition hover:bg-[#00D4FF] sm:self-auto"><span aria-hidden="true">↻</span> Atualizar agenda</button></div>
             <div className="mt-8 grid gap-3 border-t border-white/10 pt-5 sm:grid-cols-4">
-              {[['Visitas de hoje', counts.total, '▦'], ['Por iniciar', counts.pending, '◷'], ['Em andamento', counts.active, '↗'], ['Concluídas', counts.completed, '✓']].map(([label, value, icon]) => <div key={String(label)} className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF]">{icon}</span><span><span className="block text-[10px] uppercase tracking-wider text-slate-400">{label}</span><span className="mt-1 block text-lg font-black">{value}</span></span></div>)}
+              {[[agendaView === 'today' ? 'Visitas de hoje' : agendaView === 'week' ? 'Visitas esta semana' : 'Visitas este mês', counts.total, '▦'], ['Por iniciar', counts.pending, '◷'], ['Em andamento', counts.active, '↗'], ['Concluídas', counts.completed, '✓']].map(([label, value, icon]) => <div key={String(label)} className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF]">{icon}</span><span><span className="block text-[10px] uppercase tracking-wider text-slate-400">{label}</span><span className="mt-1 block text-lg font-black">{value}</span></span></div>)}
             </div>
           </section>
 
           {error && <div role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</div>}
           {notice && <div role="status" className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{notice}</div>}
+          <div role="tablist" aria-label="Período da agenda" className="mt-6 grid grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">{([['today', 'Hoje'], ['week', 'Esta semana'], ['month', 'Este mês']] as const).map(([view, label]) => <button key={view} type="button" role="tab" aria-selected={agendaView === view} onClick={() => setAgendaView(view)} className={`min-h-11 rounded-xl px-3 text-sm font-extrabold transition ${agendaView === view ? 'bg-[#0B192C] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>{label}</button>)}</div>
           <div className="mt-8 flex items-end justify-between gap-3"><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-700">Rota de trabalho</p><h2 className="mt-1 text-2xl font-black tracking-tight">As suas visitas</h2></div><span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600">{counts.total} {counts.total === 1 ? 'serviço' : 'serviços'}</span></div>
 
-          {orders.length === 0 ? <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm"><span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-2xl text-sky-700">✓</span><h3 className="mt-4 font-extrabold">Sem visitas atribuídas para hoje</h3><p className="mt-2 text-sm text-slate-500">Quando a equipa atribuir serviços à sua conta, aparecem aqui.</p></div> : <div className="mt-5 space-y-5">{orders.map((order) => {
+          {orders.length === 0 ? <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm"><span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-2xl text-sky-700">✓</span><h3 className="mt-4 font-extrabold">Sem visitas atribuídas {agendaView === 'today' ? 'para hoje' : agendaView === 'week' ? 'esta semana' : 'este mês'}</h3><p className="mt-2 text-sm text-slate-500">Quando a equipa atribuir serviços à sua conta, aparecem aqui.</p></div> : <div className="mt-5 space-y-5">{orders.map((order) => {
             const client = getClient(order.clients)
             const address = client.address?.trim() ?? ''
             const checklist = order.worker_checklist ?? []
+            const startAvailableAt = new Date(order.scheduled_date).getTime() - 5 * 60_000
+            const canStartNow = clock >= startAvailableAt
+            const phone = client.phone ? whatsappNumber(client.phone) : ''
+            const completedTasks = checklist.filter((task) => task.done)
+            const report = [`Olá ${client.name || ''},`, 'A R&R Services agradece a sua preferência.', `A sua limpeza (${order.service_type}) foi concluída com sucesso!`, '', 'Tarefas executadas:', ...(completedTasks.length ? completedTasks.map((task) => `✅ ${task.label}`) : ['Nenhuma tarefa foi marcada na checklist.']), '', `Início: ${order.started_at ? formatTime(order.started_at) : '—'}`, `Término: ${order.completed_at ? formatTime(order.completed_at) : '—'}`, `Duração: ${formatDuration(completedMinutes(order))}`].join('\n')
+            const whatsappUrl = phone && order.status === 'completed' ? `https://wa.me/${phone}?text=${encodeURIComponent(report)}` : null
             const status = order.status === 'pending' ? { label: 'Não iniciada', style: 'bg-amber-50 text-amber-700 ring-amber-200' } : order.status === 'in_progress' && order.paused_at ? { label: 'Pausada', style: 'bg-violet-50 text-violet-700 ring-violet-200' } : order.status === 'in_progress' ? { label: 'Em andamento', style: 'bg-sky-50 text-sky-700 ring-sky-200' } : order.status === 'completed' ? { label: 'Concluída', style: 'bg-emerald-50 text-emerald-700 ring-emerald-200' } : { label: 'Cancelada', style: 'bg-rose-50 text-rose-700 ring-rose-200' }
             const canEdit = order.status === 'pending' || order.status === 'in_progress'
             return <article key={order.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/[0.03] sm:rounded-3xl">
               <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6"><div className="flex min-w-0 gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#0B192C] text-lg text-[#00D4FF]">⌂</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-extrabold">{client.name || 'Cliente'}</h3><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset ${status.style}`}>{status.label}</span></div><p className="mt-1 text-sm font-semibold text-slate-600">{order.service_type}</p><p className="mt-2 text-xs font-medium capitalize text-slate-400">{formatTime(order.scheduled_date)} · {formatDate(order.scheduled_date)}</p></div></div>
-                {order.status === 'pending' && <button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'start')} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0B192C] px-5 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60 sm:w-auto"><span aria-hidden="true">▶</span>{busy === `start-${order.id}` ? 'A iniciar...' : 'Iniciar limpeza'}</button>}
+                {order.status === 'pending' && <div className="w-full sm:w-auto"><button type="button" disabled={busy !== null || !canStartNow} onClick={() => void updateOrder(order, 'start')} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0B192C] px-5 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"><span aria-hidden="true">▶</span>{busy === `start-${order.id}` ? 'A iniciar...' : canStartNow ? 'Iniciar limpeza' : `Disponível a partir das ${formatTime(new Date(startAvailableAt).toISOString())}`}</button>{!canStartNow && <p className="mt-1.5 text-center text-[11px] font-medium text-slate-500">O início fica disponível 5 minutos antes.</p>}</div>}
                 {order.status === 'in_progress' && <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-48"><span className="text-center font-mono text-sm font-bold tabular-nums text-sky-700">{durationClock(elapsedSeconds(order, clock))}</span><div className="grid grid-cols-2 gap-2"><button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, order.paused_at ? 'resume' : 'pause')} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-extrabold text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60">{busy === `${order.paused_at ? 'resume' : 'pause'}-${order.id}` ? 'A guardar...' : order.paused_at ? '▶ Retomar' : 'Ⅱ Pausar'}</button><button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'finish')} className="inline-flex min-h-12 items-center justify-center gap-1 rounded-xl bg-emerald-600 px-2 text-[11px] font-extrabold text-white transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60">{busy === `finish-${order.id}` ? 'A concluir...' : '✓ Concluir limpeza'}</button></div></div>}
               </div>
               <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
@@ -257,7 +305,7 @@ export default function WorkerAgendaPage() {
                   {client.phone && <a href={`tel:${client.phone}`} className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-sky-700 hover:text-sky-900">☎ {client.phone}</a>}
                   {order.notes && <section className="rounded-xl bg-slate-50 p-4"><h4 className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-400">Notas do serviço</h4><p className="mt-2 text-sm leading-6 text-slate-700">{order.notes}</p></section>}
                 </div>
-                <section><div className="flex items-center justify-between gap-3"><h4 className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-400">Checklist</h4><span className="text-xs font-bold text-slate-500">{checklist.filter((task) => task.done).length}/{checklist.length}</span></div><div className="mt-3 space-y-2">{checklist.map((task) => <label key={task.id} className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition ${task.done ? 'border-emerald-100 bg-emerald-50/70' : 'border-slate-100 bg-slate-50 hover:border-slate-200'} ${!canEdit || busy === `checklist-${order.id}` ? 'cursor-not-allowed opacity-70' : ''}`}><input type="checkbox" checked={task.done} disabled={!canEdit || busy === `checklist-${order.id}`} onChange={() => void toggleTask(order, task.id)} className="h-5 w-5 rounded border-slate-300 accent-sky-600 focus:ring-2 focus:ring-sky-500"/><span className={`text-sm font-medium ${task.done ? 'text-emerald-800 line-through decoration-emerald-400' : 'text-slate-700'}`}>{task.label}</span></label>)}</div></section>
+                <section><div className="flex items-center justify-between gap-3"><h4 className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-400">Checklist</h4><span className="text-xs font-bold text-slate-500">{checklist.filter((task) => task.done).length}/{checklist.length}</span></div><div className="mt-3 space-y-2">{checklist.map((task) => <label key={task.id} className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition ${task.done ? 'border-emerald-100 bg-emerald-50/70' : 'border-slate-100 bg-slate-50 hover:border-slate-200'} ${!canEdit || busy === `checklist-${order.id}` ? 'cursor-not-allowed opacity-70' : ''}`}><input type="checkbox" checked={task.done} disabled={!canEdit || busy === `checklist-${order.id}`} onChange={() => void toggleTask(order, task.id)} className="h-5 w-5 rounded border-slate-300 accent-sky-600 focus:ring-2 focus:ring-sky-500"/><span className={`text-sm font-medium ${task.done ? 'text-emerald-800 line-through decoration-emerald-400' : 'text-slate-700'}`}>{task.label}</span></label>)}</div>{canEdit && checklist.length < 50 && <form onSubmit={(event) => void addChecklistTask(event, order)} className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={newTaskDraft[order.id] ?? ''} onChange={(event) => setNewTaskDraft((current) => ({ ...current, [order.id]: event.target.value }))} maxLength={240} placeholder="Ex.: limpar interior do frigorífico" aria-label="Novo item da checklist" className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"/><button type="submit" disabled={busy !== null || !(newTaskDraft[order.id] ?? '').trim()} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-xs font-extrabold text-slate-700 transition hover:border-sky-300 hover:text-sky-700 disabled:opacity-50">+ Adicionar item</button></form>}</section>
               </div>
               <div className="grid gap-4 border-t border-slate-100 bg-slate-50/70 p-5 sm:grid-cols-2 sm:p-6">
                 {(['before', 'after'] as const).map((kind) => {
@@ -265,7 +313,7 @@ export default function WorkerAgendaPage() {
                   return <section key={kind} className="min-w-0"><div className="flex items-center justify-between gap-2"><h4 className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">{kind === 'before' ? 'Fotos antes' : 'Fotos depois'}</h4>{canUpload && <label className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-700 hover:border-sky-300 hover:text-sky-700">{busy === `photo-${order.id}` ? 'A enviar...' : '+ Adicionar foto'}<input type="file" accept="image/*" capture="environment" multiple disabled={busy !== null} onChange={(event) => { void uploadPhotos(order, kind, event.target.files); event.currentTarget.value = '' }} className="sr-only" aria-label={`Adicionar fotos ${kind === 'before' ? 'antes' : 'depois'}`} /></label>}</div><div className="mt-3 flex gap-2 overflow-x-auto pb-1">{(photos[order.id]?.[kind] ?? []).map((photo) => <a key={photo.path} href={photo.url} target="_blank" rel="noreferrer" className="block shrink-0"><Image src={photo.url} width={80} height={80} unoptimized alt={`Fotografia ${kind === 'before' ? 'antes' : 'depois'} da limpeza`} className="h-20 w-20 rounded-xl border border-slate-200 object-cover" /></a>)}{!photos[order.id]?.[kind]?.length && <p className="py-2 text-xs text-slate-400">Ainda sem fotografias.</p>}</div></section>
                 })}
               </div>
-              {order.status === 'completed' && order.completed_at && <p className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 text-xs text-slate-500 sm:px-6"><span>Concluída às {formatTime(order.completed_at)}</span><span className="rounded-full bg-emerald-50 px-3 py-1.5 font-extrabold text-emerald-800">Duração: {formatDuration(completedMinutes(order))}</span></p>}
+              {order.status === 'completed' && order.completed_at && <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 text-xs text-slate-500 sm:px-6"><span>Concluída às {formatTime(order.completed_at)}</span><span className="rounded-full bg-emerald-50 px-3 py-1.5 font-extrabold text-emerald-800">Duração: {formatDuration(completedMinutes(order))}</span>{whatsappUrl && <a href={whatsappUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-600 px-4 text-xs font-extrabold text-white transition hover:bg-emerald-700">Enviar resumo ao cliente</a>}</div>}
             </article>
           })}</div>}
         </main>

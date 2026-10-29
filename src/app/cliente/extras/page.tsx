@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import ClientBottomNav from "@/app/cliente/ClientBottomNav";
 
 export default function ClientExtrasPage() {
   const [services, setServices] = useState<any[]>([])
@@ -59,32 +57,16 @@ export default function ClientExtrasPage() {
   }
 
   return (
-    <main className="min-h-dvh bg-slate-50 pb-[calc(5.5rem+env(safe-area-inset-bottom))] text-[#0B192C] xl:pb-0">
+    <main className="min-h-dvh bg-slate-50 pb-8 text-[#0B192C] ">
       {/* Cabeçalho */}
-      <header className="bg-[#0B192C] text-white py-4 px-8 shadow-md flex justify-between items-center border-b border-slate-800">
-        <div className="flex items-center space-x-3">
-          <div className="bg-[#00D4FF]/10 p-2 rounded-xl border border-[#00D4FF]/20">
-            <span className="text-2xl font-bold tracking-wider text-[#00D4FF]">R&R</span>
-          </div>
-          <div>
-            <span className="text-lg font-bold text-white block leading-none">Services</span>
-            <span className="text-xs text-[#00D4FF]">Catálogo de Serviços Extra</span>
-          </div>
-        </div>
-        <Link
-          href="/cliente"
-          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-sm font-semibold transition border border-slate-700"
-        >
-          ← Voltar ao Portal
-        </Link>
-      </header>
+
 
       {/* Conteúdo Principal */}
       <section className="max-w-6xl mx-auto px-6 py-10">
         <div className="mb-8">
           <h1 className="text-3xl font-extrabold text-[#0B192C]">Serviços Extra Disponíveis</h1>
           <p className="text-slate-500 text-sm mt-1">
-            Selecione o serviço adicional que pretende adicionar à sua limpeza ou habitação[cite: 1].
+            Selecione o serviço adicional que pretende adicionar à sua limpeza ou habitação.
           </p>
         </div>
 
@@ -112,7 +94,7 @@ export default function ClientExtrasPage() {
                   </span>
                   <button
                     onClick={() => setSelectedService(item)}
-                    className="bg-[#0B192C] hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                    className="bg-[#0B192C] hover:bg-slate-800 text-white px-4 py-2 rounded-2xl text-xs font-bold transition shadow-sm cursor-pointer"
                   >
                     Solicitar Serviço
                   </button>
@@ -145,7 +127,7 @@ export default function ClientExtrasPage() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Ex: Zona específica da casa, quantidade de itens..."
-                  className="w-full px-4 py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm h-24"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-2xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-sm h-24"
                 />
               </div>
 
@@ -153,14 +135,14 @@ export default function ClientExtrasPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedService(null)}
-                  className="px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold text-sm transition"
+                  className="px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-2xl font-semibold text-sm transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2.5 bg-[#0B192C] hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-md transition disabled:opacity-50"
+                  className="px-6 py-2.5 bg-[#0B192C] hover:bg-slate-800 text-white rounded-2xl font-bold text-sm shadow-md transition disabled:opacity-50"
                 >
                   {submitting ? 'A enviar...' : 'Enviar Pedido'}
                 </button>
@@ -169,7 +151,6 @@ export default function ClientExtrasPage() {
           </div>
         </div>
       )}
-      <ClientBottomNav />
     </main>
   )
 }

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import ClientBottomNav from "@/app/cliente/ClientBottomNav";
 
 interface Order {
   id: string;
@@ -17,13 +16,15 @@ interface Order {
     name: string;
     phone: string;
     address?: string | null;
+    postal_code?: string | null;
+    locality?: string | null;
   };
 }
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendente",
-  in_progress: "Em Execu\u00e7\u00e3o",
-  completed: "Conclu\u00eddo",
+  in_progress: "Em Execução",
+  completed: "Concluído",
   cancelled: "Cancelado",
 };
 
@@ -51,6 +52,9 @@ const formatPreco = (valor: number) =>
     currency: "EUR",
   }).format(valor);
 
+const formatAddress = (client: Order["clients"]) =>
+  [client?.address, client?.postal_code, client?.locality].filter(Boolean).join(", ") || "Morada não registada";
+
 export default function PedidosPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,9 +66,9 @@ export default function PedidosPage() {
     setError(null);
 
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session?.user?.email) {
-        setError("Sess\u00e3o n\u00e3o encontrada. Inicie sess\u00e3o novamente.");
+      const { data: { user }, error: sessionError } = await supabase.auth.getUser();
+      if (sessionError || !user) {
+        setError("Sessão não encontrada. Inicie sessão novamente.");
         setLoading(false);
         return;
       }
@@ -72,18 +76,18 @@ export default function PedidosPage() {
       const { data: clientData, error: clientError } = await supabase
         .from("clients")
         .select("id, name, email, phone, address")
-        .eq("email", session.user.email)
+        .eq("auth_user_id", user.id)
         .single();
 
       if (clientError || !clientData) {
-        setError("Perfil de cliente n\u00e3o encontrado.");
+        setError("Perfil de cliente não encontrado.");
         setLoading(false);
         return;
       }
 
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
-        .select("*, clients(name, phone, address)")
+        .select("*, clients(name, phone, address, postal_code, locality)")
         .eq("client_id", clientData.id)
         .order("scheduled_date", { ascending: false });
 
@@ -111,33 +115,17 @@ export default function PedidosPage() {
   });
 
   return (
-    <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] pb-[calc(6rem+env(safe-area-inset-bottom))] text-[#0B192C] xl:pb-0">
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-[#0B192C] px-4 py-3 text-white shadow-lg sm:px-6 lg:px-8">
-        <div className="flex items-center space-x-3">
-          <div className="rounded-xl border border-[#00D4FF]/20 bg-[#00D4FF]/10 p-2">
-            <span className="text-2xl font-bold tracking-wider text-[#00D4FF]">R&R</span>
-          </div>
-          <div>
-            <span className="text-lg font-bold text-white block leading-none">Services</span>
-            <span className="text-xs text-[#00D4FF]">Hist\u00f3rico de Pedidos</span>
-          </div>
-        </div>
-        <Link
-          href="/cliente"
-          className="inline-flex min-h-11 items-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10 sm:text-sm"
-        >
-          \u2190 Voltar ao Portal
-        </Link>
-      </header>
+    <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] pb-8 text-[#0B192C] ">
+
 
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-9 lg:px-8">
         <div className="mb-7 sm:mb-9">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-700">Portal do cliente</p>
           <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-[#0B192C] sm:text-3xl">
-            Hist\u00f3rico de Pedidos e Interven\u00e7\u00f5es
+            Histórico de Pedidos e Intervenções
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            Consulte o estado das suas limpezas, servi\u00e7os extra e encomendas.
+            Consulte o estado das suas limpezas, serviços extra e encomendas.
           </p>
         </div>
 
@@ -166,16 +154,16 @@ export default function PedidosPage() {
             ) : (
               <>
                 <p className="text-slate-600 font-medium text-lg">
-                  Ainda n\u00e3o tem pedidos registados.
+                  Ainda não tem pedidos registados.
                 </p>
                 <p className="text-slate-400 text-sm mt-2">
-                  Os seus servi\u00e7os e interven\u00e7\u00f5es aparecer\u00e3o aqui assim que forem agendados.
+                  Os seus serviços e intervenções aparecerão aqui assim que forem agendados.
                 </p>
                 <Link
                   href="/cliente/extras"
-                  className="mt-6 inline-block bg-[#0B192C] text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition"
+                  className="mt-6 inline-block bg-[#0B192C] text-white px-6 py-3 rounded-2xl font-bold hover:bg-slate-800 transition"
                 >
-                  Solicitar um servi\u00e7o
+                  Solicitar um serviço
                 </Link>
               </>
             )}
@@ -190,20 +178,20 @@ export default function PedidosPage() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 sm:w-auto"
+                  className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 sm:w-auto"
                 >
                   <option value="todos">Todos os estados</option>
                   <option value="pending">Pendente</option>
-                  <option value="in_progress">Em Execu\u00e7\u00e3o</option>
-                  <option value="completed">Conclu\u00eddo</option>
+                  <option value="in_progress">Em Execução</option>
+                  <option value="completed">Concluído</option>
                   <option value="cancelled">Cancelado</option>
                 </select>
               </div>
               <Link
                 href="/cliente/extras"
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#0B192C] px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 sm:w-auto"
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-2xl bg-[#0B192C] px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 sm:w-auto"
               >
-                + Solicitar servi\u00e7o
+                + Solicitar serviço
               </Link>
             </div>
 
@@ -211,8 +199,8 @@ export default function PedidosPage() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-bold">
                   <tr>
-                    <th className="p-4">Refer\u00eancia</th>
-                    <th className="p-4">Servi\u00e7o</th>
+                    <th className="p-4">Referência</th>
+                    <th className="p-4">Serviço</th>
                     <th className="p-4">Data e Hora</th>
                     <th className="p-4">Morada</th>
                     <th className="p-4">Valor</th>
@@ -233,7 +221,7 @@ export default function PedidosPage() {
                         {formatDate(order.scheduled_date)}
                       </td>
                       <td className="p-4 text-slate-600 text-sm">
-                        {order.clients?.address || "Morada n\u00e3o registada"}
+                        {formatAddress(order.clients)}
                       </td>
                       <td className="p-4 font-extrabold text-[#0B192C]">
                         {formatPreco(order.total_amount || 0)}
@@ -276,16 +264,15 @@ export default function PedidosPage() {
                   <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 text-sm">
                     <div><p className="text-xs font-medium text-slate-400">Data e hora</p><p className="mt-1 font-semibold text-slate-700">{formatDate(order.scheduled_date)}</p></div>
                     <div><p className="text-xs font-medium text-slate-400">Valor</p><p className="mt-1 font-extrabold text-[#0B192C]">{formatPreco(order.total_amount || 0)}</p></div>
-                    <div className="col-span-2"><p className="text-xs font-medium text-slate-400">Morada</p><p className="mt-1 text-slate-700">{order.clients?.address || "Morada não registada"}</p></div>
+                    <div className="col-span-2"><p className="text-xs font-medium text-slate-400">Morada</p><p className="mt-1 text-slate-700">{formatAddress(order.clients)}</p></div>
                   </div>
-                  {order.notes && <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm leading-5 text-slate-600">{order.notes}</p>}
+                  {order.notes && <p className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm leading-5 text-slate-600">{order.notes}</p>}
                 </article>
               ))}
             </div>
           </>
         )}
       </section>
-    <ClientBottomNav />
     </div>
   );
 }

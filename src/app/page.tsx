@@ -95,7 +95,7 @@ export default function Home() {
         {/* Botão Acesso Área do Cliente */}
         <div className="hidden md:flex items-center space-x-4">
           <Link
-            href="/login"
+            href="/login?next=%2Fcliente&force=1"
             className="text-sm font-semibold bg-[#00D4FF] text-[#0B192C] px-5 py-2.5 rounded-xl hover:bg-[#00bfe6] transition shadow-md"
           >
             Área do Cliente
@@ -127,7 +127,7 @@ export default function Home() {
           <a href="#faq" onClick={() => setMobileMenuOpen(false)}>FAQ</a>
           <a href="#contactos" onClick={() => setMobileMenuOpen(false)}>Contactos</a>
           <Link
-            href="/login"
+            href="/login?next=%2Fcliente&force=1"
             onClick={() => setMobileMenuOpen(false)}
             className="text-center font-semibold bg-[#00D4FF] text-[#0B192C] py-2.5 rounded-xl"
           >
@@ -541,7 +541,7 @@ export default function Home() {
             </div>
             <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
               <h3 className="font-bold text-lg text-[#0B192C] mb-2">Como posso acompanhar as minhas marcações e orçamentos?</h3>
-              <p className="text-slate-600 text-sm">Basta aceder à <Link href="/login" className="text-[#00D4FF] font-semibold underline">Área do Cliente</Link> para consultar o histórico, ver o estado das suas solicitações e solicitar novos serviços extra.</p>
+              <p className="text-slate-600 text-sm">Basta aceder à <Link href="/login?next=%2Fcliente&force=1" className="text-[#00D4FF] font-semibold underline">Área do Cliente</Link> para consultar o histórico, ver o estado das suas solicitações e solicitar novos serviços extra.</p>
             </div>
           </div>
         </div>
@@ -565,7 +565,7 @@ export default function Home() {
             <ul className="space-y-2 text-sm text-slate-300">
               <li><a href="#servicos" className="hover:text-white transition">Serviços</a></li>
               <li><a href="#simulador" className="hover:text-white transition">Simulador de Orçamento</a></li>
-              <li><Link href="/login" className="hover:text-white transition">Área de Clientes</Link></li>
+              <li><Link href="/login?next=%2Fcliente&force=1" className="hover:text-white transition">Área de Clientes</Link></li>
             </ul>
           </div>
 

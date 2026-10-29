@@ -5,6 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
+function formatPhoneLogin(value: string) {
+  let digits = value.trim().replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('351')) return `+${digits}`;
+  if (digits.length === 9) return `+351${digits}`;
+  return digits.length >= 7 && digits.length <= 15 ? `+${digits}` : null;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -18,10 +26,11 @@ export default function LoginPage() {
     setErro('');
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password,
-      });
+      const identifier = email.trim();
+      const credentials = identifier.includes('@')
+        ? { email: identifier.toLowerCase(), password }
+        : { phone: formatPhoneLogin(identifier) ?? identifier, password };
+      const { data, error } = await supabase.auth.signInWithPassword(credentials);
 
       if (error) {
         setErro('E-mail ou palavra-passe incorretos.');
@@ -35,16 +44,14 @@ export default function LoginPage() {
         return;
       }
 
-      const userEmail = data.user?.email?.toLowerCase() || email.toLowerCase();
-
-      // Determinar o destino com base no role registado na tabela clients
+      // Resolve the role by the Auth subject, not by a user-editable email.
       let destino = '/cliente';
       try {
         const { data: clientData } = await supabase
           .from('clients')
           .select('role')
-          .eq('email', userEmail)
-          .single();
+          .eq('auth_user_id', data.user.id)
+          .maybeSingle();
 
         if (clientData?.role === 'admin') {
           destino = '/admin';
@@ -54,7 +61,7 @@ export default function LoginPage() {
       }
 
       router.push(destino);
-    } catch (err) {
+    } catch {
       setErro('Ocorreu um erro ao tentar ligar ao servidor.');
     } finally {
       setLoading(false);
@@ -89,12 +96,13 @@ export default function LoginPage() {
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
-              E-mail
+              E-mail ou telemóvel
             </label>
             <input
-              type="email"
+              type="text"
               required
-              placeholder="rrservices.pt@gmail.com"
+              autoComplete="username"
+              placeholder="email@exemplo.pt ou 912 345 678"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full p-3 rounded-xl border border-slate-300 focus:outline-none focus:border-[#00D4FF] focus:ring-1 focus:ring-[#00D4FF] text-sm"
