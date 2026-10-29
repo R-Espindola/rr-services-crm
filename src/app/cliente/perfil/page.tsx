@@ -27,6 +27,13 @@ export default function ClientProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [newLoginEmail, setNewLoginEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [securityBusy, setSecurityBusy] = useState(false);
+  const [securityError, setSecurityError] = useState("");
+  const [securitySuccess, setSecuritySuccess] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -36,6 +43,9 @@ export default function ClientProfilePage() {
       try {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) throw new Error("A sua sessão terminou. Inicie sessão novamente.");
+        if (new URLSearchParams(window.location.search).get("emailUpdated") === "1") {
+          setSecuritySuccess("E-mail de acesso confirmado e atualizado.");
+        }
         const { data, error: profileError } = await supabase.from("clients")
           .select("name, phone, email, address, postal_code, locality, birth_date")
           .eq("auth_user_id", user.id)
@@ -43,6 +53,7 @@ export default function ClientProfilePage() {
         if (profileError || !data) throw new Error("Não foi possível encontrar o perfil associado à sua conta.");
         if (active) {
           setUserId(user.id);
+          setLoginEmail(user.email ?? "");
           setForm({
             name: data.name ?? "", phone: data.phone ?? "", email: data.email ?? user.email ?? "",
             address: data.address ?? "", postal_code: data.postal_code ?? "", locality: data.locality ?? "",
@@ -101,6 +112,55 @@ export default function ClientProfilePage() {
     }
   }
 
+  async function updateLoginEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = newLoginEmail.trim().toLowerCase();
+    if (!email || email === loginEmail.toLowerCase()) {
+      setSecurityError("Introduza um e-mail diferente do e-mail de acesso atual.");
+      return;
+    }
+    setSecurityBusy(true);
+    setSecurityError("");
+    setSecuritySuccess("");
+    try {
+      const emailRedirectTo = `${window.location.origin}/auth/callback?flow=email-change`;
+      const { error: updateError } = await supabase.auth.updateUser({ email }, { emailRedirectTo });
+      if (updateError) throw updateError;
+      setNewLoginEmail("");
+      setSecuritySuccess("Pedido enviado. Confirme a alteração através do link enviado pelo Supabase antes de usar o novo e-mail para iniciar sessão.");
+    } catch {
+      setSecurityError("Não foi possível atualizar o e-mail de acesso. Verifique o endereço e tente novamente.");
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
+
+  async function updatePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newPassword.length < 12) {
+      setSecurityError("A nova palavra-passe deve ter pelo menos 12 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setSecurityError("As palavras-passe não coincidem.");
+      return;
+    }
+    setSecurityBusy(true);
+    setSecurityError("");
+    setSecuritySuccess("");
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
+      setNewPassword("");
+      setConfirmPassword("");
+      setSecuritySuccess("Palavra-passe alterada com sucesso.");
+    } catch {
+      setSecurityError("Não foi possível alterar a palavra-passe. Inicie sessão novamente e tente outra vez.");
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
+
   return (
     <main className="min-h-dvh px-4 py-6 pb-28 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <div className="mx-auto max-w-4xl">
@@ -127,6 +187,25 @@ export default function ClientProfilePage() {
             <button type="submit" disabled={saving || loading || !userId} className="inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-[#0B192C] px-6 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">{saving ? "A guardar..." : "Guardar alterações"}</button>
           </footer>
         </form>}
+        {!loading && userId && <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+          <div className="mb-5 border-b border-slate-100 pb-4"><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-700">Segurança</p><h2 className="mt-1 text-xl font-black">Credenciais de acesso</h2><p className="mt-1 text-sm text-slate-500">Altere o e-mail usado para entrar ou defina uma nova palavra-passe.</p></div>
+          <div className="grid gap-7 lg:grid-cols-2">
+            <form onSubmit={updateLoginEmail} className="space-y-4">
+              <div><h3 className="font-extrabold">E-mail de acesso</h3><p className="mt-1 break-all text-sm text-slate-600">Atual: {loginEmail || "Sem e-mail de acesso"}</p></div>
+              <label className={labelClass}>Novo e-mail de acesso<input required type="email" maxLength={254} autoComplete="email" value={newLoginEmail} onChange={(event) => { setNewLoginEmail(event.target.value); setSecurityError(""); setSecuritySuccess(""); }} className={fieldClass} placeholder="nome@exemplo.pt" /></label>
+              <button type="submit" disabled={securityBusy || !newLoginEmail.trim()} className="min-h-11 rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 disabled:opacity-50">{securityBusy ? "A atualizar..." : "Alterar e-mail de acesso"}</button>
+              <p className="text-xs leading-5 text-slate-500">O novo e-mail só passa a ser usado depois de confirmar a mensagem enviada pelo Supabase.</p>
+              {loginEmail.endsWith("@rrservices.internal") && <p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">Esta conta foi criada sem e-mail pessoal. No Supabase, desative “Secure email change” para que a confirmação seja enviada apenas para o novo endereço; a confirmação do novo e-mail continua obrigatória.</p>}
+            </form>
+            <form onSubmit={updatePassword} className="space-y-4">
+              <div><h3 className="font-extrabold">Palavra-passe</h3><p className="mt-1 text-sm text-slate-500">Use pelo menos 12 caracteres.</p></div>
+              <label className={labelClass}>Nova palavra-passe<input required type="password" minLength={12} autoComplete="new-password" value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setSecurityError(""); setSecuritySuccess(""); }} className={fieldClass} /></label>
+              <label className={labelClass}>Confirmar palavra-passe<input required type="password" minLength={12} autoComplete="new-password" value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setSecurityError(""); setSecuritySuccess(""); }} className={fieldClass} /></label>
+              <button type="submit" disabled={securityBusy || !newPassword || !confirmPassword} className="min-h-11 rounded-2xl bg-[#0B192C] px-4 text-sm font-bold text-white transition hover:bg-slate-800 disabled:opacity-50">{securityBusy ? "A atualizar..." : "Alterar palavra-passe"}</button>
+            </form>
+          </div>
+          <div aria-live="polite" className="mt-5">{securityError && <p role="alert" className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{securityError}</p>}{securitySuccess && <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{securitySuccess}</p>}</div>
+        </section>}
       </div>
     </main>
   );
