@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import ServiceMetrics from './ServiceMetrics';
 import BookingDetailsModal from './BookingDetailsModal';
-import { atribuirFuncionarioAMarcacao, listAssignableWorkers, type AssignableWorker } from './actions';
+import { agendarLimpezasRecorrentes, atribuirFuncionarioAMarcacao, listAssignableWorkers, type AssignableWorker } from './actions';
 
 export interface Order {
   id: string;
@@ -51,6 +51,8 @@ export default function AgendaPage() {
   const [submitting, setSubmitting] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedWorkerUserId, setSelectedWorkerUserId] = useState('');
+  const [frequency, setFrequency] = useState<'once' | 'weekly' | 'biweekly'>('once');
+  const [occurrences, setOccurrences] = useState(6);
   const [serviceType, setServiceType] = useState('Limpeza Residencial');
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('09:00');
@@ -103,37 +105,48 @@ export default function AgendaPage() {
   async function handleCreateOrder(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedClientId) {
-      alert('Por favor, selecione um cliente.');
+      setAssignmentFeedback({ message: 'Por favor, selecione um cliente.', error: true });
       return;
     }
 
     setSubmitting(true);
-    const fullDateTime = `${scheduledDate}T${scheduledTime}:00`;
+    setAssignmentFeedback(null);
+    try {
+      const result = await agendarLimpezasRecorrentes({
+        clientId: selectedClientId,
+        serviceType,
+        date: scheduledDate,
+        time: scheduledTime,
+        totalAmount: Number(totalAmount),
+        notes,
+        workerUserId: selectedWorkerUserId || null,
+        frequency,
+        occurrences: frequency === 'once' ? 1 : occurrences,
+      });
 
-    const { error } = await supabase.from('orders').insert([
-      {
-        client_id: selectedClientId,
-        service_type: serviceType,
-        scheduled_date: fullDateTime,
-        total_amount: parseFloat(totalAmount) || 0,
-        status: 'pending',
-        notes: notes,
-        worker_user_id: selectedWorkerUserId || null,
+      if (!result.success) {
+        setAssignmentFeedback({ message: result.error, error: true });
+        return;
       }
-    ]);
 
-    if (error) {
-      alert('Erro ao agendar limpeza: ' + error.message);
-    } else {
-      alert('Limpeza agendada com sucesso!');
+      const count = result.data.count;
+      setAssignmentFeedback({
+        message: `${count} ${count === 1 ? 'limpeza agendada' : 'limpezas agendadas'} com sucesso!`,
+        error: false,
+      });
       setShowAddModal(false);
       setSelectedClientId('');
       setSelectedWorkerUserId('');
       setScheduledDate('');
       setNotes('');
-      fetchOrders();
+      setFrequency('once');
+      setOccurrences(6);
+      await fetchOrders();
+    } catch {
+      setAssignmentFeedback({ message: 'Ocorreu um erro ao agendar as limpezas. Tente novamente.', error: true });
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   }
 
   async function handleStatusChange(id: string, newStatus: string) {
@@ -233,7 +246,7 @@ export default function AgendaPage() {
           </div>
 
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { setAssignmentFeedback(null); setShowAddModal(true); }}
             className="min-h-11 rounded-xl bg-[#0B192C] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 sm:py-2.5"
           >
             + Agendar Limpeza
@@ -513,6 +526,33 @@ export default function AgendaPage() {
               </div>
 
               <div>
+                <label htmlFor="appointment-frequency" className="block text-xs font-bold uppercase text-slate-700 mb-1">Frequência / Recorrência</label>
+                <select
+                  id="appointment-frequency"
+                  value={frequency}
+                  onChange={(e) => setFrequency(e.target.value as 'once' | 'weekly' | 'biweekly')}
+                  className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]"
+                >
+                  <option value="once">Apenas uma vez</option>
+                  <option value="weekly">Semanal</option>
+                  <option value="biweekly">Quinzenal</option>
+                </select>
+              </div>
+
+              {frequency !== 'once' && <div>
+                <label htmlFor="appointment-occurrences" className="block text-xs font-bold uppercase text-slate-700 mb-1">Limite de Repetições</label>
+                <select
+                  id="appointment-occurrences"
+                  value={occurrences}
+                  onChange={(e) => setOccurrences(Number(e.target.value))}
+                  className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]"
+                >
+                  {[2, 3, 4, 5, 6].map((count) => <option key={count} value={count}>{count} ocorrências</option>)}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-500">Total de marcações, incluindo a primeira, em intervalos de {frequency === 'weekly' ? '7' : '14'} dias.</p>
+              </div>}
+
+              <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Valor (€)</label>
                 <input
                   type="number"
@@ -534,11 +574,14 @@ export default function AgendaPage() {
                 />
               </div>
 
+              {assignmentFeedback?.error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-semibold text-rose-800">{assignmentFeedback.message}</p>}
+
               <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="w-full sm:w-auto px-4 py-3 sm:py-2 text-xs font-bold text-slate-600 cursor-pointer text-center"
+                  disabled={submitting}
+                  onClick={() => { setShowAddModal(false); setAssignmentFeedback(null); }}
+                  className="w-full sm:w-auto px-4 py-3 sm:py-2 text-xs font-bold text-slate-600 cursor-pointer text-center disabled:opacity-50"
                 >
                   Cancelar
                 </button>
@@ -547,7 +590,7 @@ export default function AgendaPage() {
                   disabled={submitting}
                   className="w-full sm:w-auto px-6 py-3.5 sm:py-2.5 bg-[#0B192C] text-white rounded-xl text-xs font-bold cursor-pointer text-center shadow"
                 >
-                  {submitting ? 'A agendar...' : 'Guardar Agendamento'}
+                  {submitting ? 'A agendar...' : frequency === 'once' ? 'Guardar Agendamento' : `Agendar ${occurrences} Limpezas`}
                 </button>
               </div>
             </form>

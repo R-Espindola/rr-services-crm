@@ -145,16 +145,13 @@ export default function QuotesPage() {
       return
     }
 
-    const { error } = await supabase.from('orders').insert([
-      {
-        client_id: quote.client_id,
-        service_type: `${quote.service_type} (${quote.typology || 'T2'} - ${quote.frequency || 'Pontual'})`,
-        scheduled_date: new Date().toISOString(),
-        total_amount: quote.total,
-        status: 'pending',
-        notes: `Gerado a partir do Orçamento. ${quote.notes || ''}`,
-      },
-    ])
+    const { error } = await supabase.rpc('admin_criar_agendamento_seguro', {
+      p_client_id: quote.client_id,
+      p_service_type: `${quote.service_type} (${quote.typology || 'T2'} - ${quote.frequency || 'Pontual'})`,
+      p_scheduled_date: new Date().toISOString(),
+      p_total_amount: quote.total,
+      p_notes: `Gerado a partir do Orçamento. ${quote.notes || ''}`,
+    })
 
     if (error) {
       alert('Erro ao converter em agendamento: ' + error.message)
