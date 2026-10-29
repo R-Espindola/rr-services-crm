@@ -1,179 +1,80 @@
+import { randomInt } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const runtime = 'nodejs'
 
-interface QuoteRequest {
-  nome: string
-  email: string
-  telefone: string
-  tipoServico: string
-  tipologia: string
-  frequencia: string
-  servicosAdicionais: string[]
-  observacoes?: string
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!supabaseUrl || !serviceKey) throw new Error('Supabase server configuration is missing')
+const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
 
-const PRECOS_BASE: Record<string, Record<string, number>> = {
-  residencial_regular: {
-    t1: 45,
-    t2: 65,
-    t3: 85,
-    t4_plus: 120,
-    comercial: 65,
-  },
-  profunda: {
-    t1: 80,
-    t2: 110,
-    t3: 145,
-    t4_plus: 190,
-    comercial: 110,
-  },
-  pos_obra: {
-    t1: 150,
-    t2: 200,
-    t3: 260,
-    t4_plus: 340,
-    comercial: 200,
-  },
-  estofos: {
-    t1: 60,
-    t2: 80,
-    t3: 100,
-    t4_plus: 130,
-    comercial: 80,
-  },
-  comercial: {
-    comercial: 80,
-  },
+const BASE: Record<string, Record<string, number>> = {
+  residencial_regular: { t1: 45, t2: 65, t3: 85, t4_plus: 120, comercial: 65 },
+  profunda: { t1: 80, t2: 110, t3: 145, t4_plus: 190, comercial: 110 },
+  pos_obra: { t1: 150, t2: 200, t3: 260, t4_plus: 340, comercial: 200 },
+  estofos: { t1: 60, t2: 80, t3: 100, t4_plus: 130, comercial: 80 },
+  comercial: { comercial: 80 },
 }
-
-const PRECOS_EXTRAS: Record<string, number> = {
-  'Vidros & Estores': 35,
-  'Interior do Forno': 20,
-  'Interior do Frigorífico': 18,
-  'Limpeza de Varandas': 25,
-  'Passagem de Roupa': 15,
+const EXTRAS: Record<string, number> = {
+  'Vidros & Estores': 35, 'Interior do Forno': 20, 'Interior do Frigorífico': 18,
+  'Limpeza de Varandas': 25, 'Passagem de Roupa': 15,
 }
-
-function calcularSubtotal(req: QuoteRequest): number {
-  const base = PRECOS_BASE[req.tipoServico]?.[req.tipologia] || 50
-  const extraTotal = req.servicosAdicionais.reduce(
-    (acc, extra) => acc + (PRECOS_EXTRAS[extra] || 0),
-    0
-  )
-  const fatorFrequencia: Record<string, number> = {
-    pontual: 1,
-    semanal: 0.9,
-    quinzenal: 0.95,
-    mensal: 1,
-  }
-  return Math.round((base * fatorFrequencia[req.frequencia] || base + extraTotal) * 100) / 100
-}
+const FREQUENCY: Record<string, number> = { pontual: 1, semanal: 0.9, quinzenal: 0.95, mensal: 1 }
+const json = (body: object, status = 200) => NextResponse.json(body, { status })
 
 export async function POST(request: Request) {
   try {
-    const body: QuoteRequest = await request.json() as QuoteRequest;
+    const length = Number(request.headers.get('content-length') ?? 0)
+    if (length > 10_000) return json({ error: 'Pedido demasiado grande.' }, 413)
+    const body: unknown = await request.json()
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Pedido inválido.' }, 400)
+    const input = body as Record<string, unknown>
+    const { nome, email, telefone, tipoServico, tipologia, frequencia, servicosAdicionais, observacoes } = input
 
-    // Validação dos campos obrigatórios
-    if (!body.nome || body.nome.trim().length < 2) {
-      return NextResponse.json({ error: 'Nome é obrigatório.' }, { status: 400 })
-    }
-    if (!body.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
-      return NextResponse.json({ error: 'E-mail inválido.' }, { status: 400 })
-    }
-    if (!body.telefone || body.telefone.trim().length < 9) {
-      return NextResponse.json({ error: 'Telefone é obrigatório.' }, { status: 400 })
-    }
-    if (!body.tipoServico || !body.tipologia || !body.frequencia) {
-      return NextResponse.json({ error: 'Dados do serviço incompletos.' }, { status: 400 })
-    }
+    if (typeof nome !== 'string' || nome.trim().length < 2 || nome.trim().length > 120) return json({ error: 'Nome inválido.' }, 400)
+    if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'E-mail inválido.' }, 400)
+    if (typeof telefone !== 'string' || telefone.trim().length < 9 || telefone.length > 30) return json({ error: 'Telefone inválido.' }, 400)
+    if (typeof tipoServico !== 'string' || typeof tipologia !== 'string' || typeof frequencia !== 'string' ||
+        !BASE[tipoServico]?.[tipologia] || FREQUENCY[frequencia] === undefined) return json({ error: 'Dados do serviço inválidos.' }, 400)
+    if (!Array.isArray(servicosAdicionais) || servicosAdicionais.length > Object.keys(EXTRAS).length ||
+        !servicosAdicionais.every((item): item is string => typeof item === 'string' && item in EXTRAS) ||
+        new Set(servicosAdicionais).size !== servicosAdicionais.length) return json({ error: 'Serviços adicionais inválidos.' }, 400)
+    if (observacoes !== undefined && (typeof observacoes !== 'string' || observacoes.length > 2000)) return json({ error: 'Observações demasiado longas.' }, 400)
 
-    const subtotal = calcularSubtotal(body)
-    const vatRate = 23
-    const total = Math.round((subtotal * (1 + vatRate / 100)) * 100) / 100
+    const subtotal = Math.round((BASE[tipoServico][tipologia] * FREQUENCY[frequencia] +
+      servicosAdicionais.reduce((sum, item) => sum + EXTRAS[item], 0)) * 100) / 100
+    const total = Math.round(subtotal * 1.23 * 100) / 100
+    const normalizedEmail = email.trim().toLowerCase()
 
-    // 1. Encontrar ou criar cliente pelo email
-    let clientId: string
-    const { data: existingClient } = await supabaseAdmin
-      .from('clients')
-      .select('id')
-      .eq('email', body.email.toLowerCase())
-      .single()
-
-    if (existingClient) {
-      clientId = existingClient.id
-      // Atualizar telefone e nome se fornecidos
-      await supabaseAdmin
-        .from('clients')
-        .update({ name: body.nome.trim(), phone: body.telefone.trim() })
-        .eq('id', clientId)
-    } else {
-      const { data: newClient, error: clientError } = await supabaseAdmin
-        .from('clients')
-        .insert([
-          {
-            name: body.nome.trim(),
-            email: body.email.toLowerCase(),
-            phone: body.telefone.trim(),
-            address: null,
-            role: 'client',
-          },
-        ])
-        .select('id')
-        .single()
-
-      if (clientError || !newClient) {
-        return NextResponse.json(
-          { error: 'Não foi possível registar os dados do cliente.' },
-          { status: 500 }
-        )
-      }
-      clientId = newClient.id
+    // Never mutate an existing account based on an unauthenticated email claim.
+    const { data: existing, error: lookupError } = await supabaseAdmin.from('clients')
+      .select('id').eq('email', normalizedEmail).maybeSingle()
+    if (lookupError) return json({ error: 'Não foi possível processar o orçamento.' }, 500)
+    let clientId = existing?.id
+    if (!clientId) {
+      const { data: created, error } = await supabaseAdmin.from('clients').insert({
+        name: nome.trim(), email: normalizedEmail, phone: telefone.trim(), address: null, role: 'client',
+      }).select('id').single()
+      if (error || !created) return json({ error: 'Não foi possível registar os dados do cliente.' }, 500)
+      clientId = created.id
     }
 
-    // 2. Gerar referência do orçamento
-    const ano = new Date().getFullYear()
-    const mes = String(new Date().getMonth() + 1).padStart(2, '0')
-    const aleatorio = Math.floor(1000 + Math.random() * 9000)
-    const referencia = `ORC-${ano}${mes}-${aleatorio}`
-
-    // 3. Criar o orçamento com estado pendente
-    const validUntil = new Date()
+    const now = new Date()
+    const reference = `ORC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${randomInt(100000, 1_000_000)}`
+    const validUntil = new Date(now)
     validUntil.setDate(validUntil.getDate() + 30)
-
-    const { error: quoteError } = await supabaseAdmin.from('quotes').insert([
-      {
-        id: referencia,
-        client_id: clientId,
-        service_type: body.tipoServico,
-        typology: body.tipologia,
-        frequency: body.frequencia,
-        subtotal,
-        discount: 0,
-        vat_rate: vatRate,
-        total,
-        estimated_cost: 0,
-        margin_percentage: 0,
-        status: 'pending',
-        valid_until: validUntil.toISOString().split('T')[0],
-        notes: `Pedido público via simulador. Extras: ${body.servicosAdicionais.join(', ') || 'Nenhum'}. Observações: ${body.observacoes || 'Nenhuma'}.`,
-      },
-    ])
-
-    if (quoteError) {
-      return NextResponse.json({ error: quoteError.message }, { status: 400 })
-    }
-
-    return NextResponse.json({
-      success: true,
-      reference: referencia,
-      total,
+    const safeNotes = `Pedido público via simulador. Extras: ${servicosAdicionais.join(', ') || 'Nenhum'}. Observações: ${typeof observacoes === 'string' ? observacoes.trim() : 'Nenhuma'}.`
+    const { error } = await supabaseAdmin.from('quotes').insert({
+      id: reference, client_id: clientId, service_type: tipoServico, typology: tipologia,
+      frequency: frequencia, subtotal, discount: 0, vat_rate: 23, total, estimated_cost: 0,
+      margin_percentage: 0, status: 'pending', valid_until: validUntil.toISOString().slice(0, 10), notes: safeNotes,
     })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Erro interno' }, { status: 500 })
+    if (error) return json({ error: 'Não foi possível criar o orçamento.' }, 500)
+    return json({ success: true, reference, total }, 201)
+  } catch {
+    return json({ error: 'Não foi possível processar o orçamento.' }, 500)
   }
 }

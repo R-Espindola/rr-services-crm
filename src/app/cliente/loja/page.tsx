@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import Link from "next/link";
+import ClientBottomNav from "@/app/cliente/ClientBottomNav";
 
 export interface Product {
   id: string
@@ -86,8 +87,8 @@ export default function ClientStorePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-[#0B192C]">
-      <header className="bg-[#0B192C] text-white py-4 px-8 shadow-md flex justify-between items-center border-b border-slate-800">
+    <main className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] pb-[calc(6rem+env(safe-area-inset-bottom))] text-[#0B192C] xl:pb-0">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-[#0B192C] px-4 py-3 text-white shadow-lg sm:px-6 lg:px-8">
         <div className="flex items-center space-x-3">
           <div className="bg-[#00D4FF]/10 p-2 rounded-xl border border-[#00D4FF]/20">
             <span className="text-2xl font-bold tracking-wider text-[#00D4FF]">R&R</span>
@@ -99,53 +100,54 @@ export default function ClientStorePage() {
         </div>
         <Link
           href="/cliente"
-          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-bold transition border border-slate-700"
+          className="inline-flex min-h-11 items-center rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10 sm:text-sm"
         >
           ← Voltar à Área de Cliente
         </Link>
       </header>
 
-      <section className="max-w-7xl mx-auto px-6 py-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-extrabold text-[#0B192C]">Loja R&R Services</h1>
-          <p className="text-slate-500 text-sm mt-1">
+      <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-9 lg:px-8">
+        <div className="mb-7 sm:mb-9">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-700">Loja do cliente</p>
+          <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-[#0B192C] sm:text-3xl">Produtos profissionais</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
             Escolha os produtos e detergentes de gama profissional para entrega na sua próxima intervenção.
           </p>
         </div>
 
         {loading ? (
-          <div className="py-20 text-center text-slate-400 font-medium">A carregar produtos disponíveis...</div>
+          <div className="rounded-2xl border border-slate-200 bg-white py-20 text-center text-sm font-medium text-slate-400">A carregar produtos disponíveis...</div>
         ) : products.length === 0 ? (
-          <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 text-slate-400">
+          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400 sm:p-12">
             De momento não existem produtos disponíveis para encomenda.
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
             {products.map((prod) => (
-              <div key={prod.id} className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200 flex flex-col justify-between hover:shadow-md transition">
+              <div key={prod.id} className="group flex min-w-0 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg sm:p-5">
                 <div>
-                  <div className="w-full h-40 bg-slate-100 rounded-2xl flex items-center justify-center overflow-hidden mb-4 border border-slate-100">
+                  <div className="mb-3 flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-slate-100 bg-slate-50 sm:mb-4 sm:h-40 sm:rounded-2xl">
                     {prod.image_url ? (
                       <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-4xl">🧴</span>
                     )}
                   </div>
-                  <span className="text-[10px] font-extrabold text-[#00D4FF] bg-[#00D4FF]/10 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                  <span className="inline-flex max-w-full truncate rounded-full bg-cyan-50 px-2 py-1 text-[9px] font-extrabold uppercase tracking-wider text-cyan-800 sm:px-2.5 sm:text-[10px]">
                     {prod.category}
                   </span>
-                  <h3 className="text-base font-bold text-[#0B192C] mt-2 line-clamp-1">{prod.name}</h3>
-                  <p className="text-xs text-slate-500 mt-1 line-clamp-2">{prod.description || 'Produto de limpeza profissional.'}</p>
+                  <h3 className="mt-2 line-clamp-2 break-words text-sm font-bold text-[#0B192C] sm:text-base">{prod.name}</h3>
+                  <p className="mt-1 hidden line-clamp-2 text-xs leading-5 text-slate-500 sm:block">{prod.description || 'Produto de limpeza profissional.'}</p>
                 </div>
 
-                <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-lg font-black text-[#0B192C]">{Number(prod.price).toFixed(2)} €</span>
+                <div className="mt-4 flex flex-col items-stretch justify-between gap-2 border-t border-slate-100 pt-3 sm:mt-6 sm:flex-row sm:items-center sm:pt-4">
+                  <span className="text-base font-black text-[#0B192C] sm:text-lg">{Number(prod.price).toFixed(2)} €</span>
                   <button
                     onClick={() => {
                       setSelectedProduct(prod)
                       setQuantity(1)
                     }}
-                    className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm"
+                    className="min-h-11 rounded-xl bg-[#0B192C] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 sm:px-4"
                   >
                     Encomendar
                   </button>
@@ -158,11 +160,11 @@ export default function ClientStorePage() {
 
       {/* MODAL CONFIRMAR ENCOMENDA */}
       {selectedProduct && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-[#0B192C]">Confirmar Encomenda</h3>
-              <button onClick={() => setSelectedProduct(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+              <button onClick={() => setSelectedProduct(null)} aria-label="Fechar" className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">✕</button>
             </div>
 
             <form onSubmit={handleOrderSubmit} className="space-y-4">
@@ -210,6 +212,7 @@ export default function ClientStorePage() {
           </div>
         </div>
       )}
+      <ClientBottomNav />
     </main>
   )
 }

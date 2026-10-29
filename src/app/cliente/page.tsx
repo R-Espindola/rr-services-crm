@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import ClientBottomNav from "@/app/cliente/ClientBottomNav";
 
 interface Client {
   id: string;
@@ -88,7 +89,6 @@ const formatarDataHora = (dateString: string | null) => {
 export default function ClienteDashboard() {
   const [notificacoesAbertas, setNotificacoesAbertas] = useState(false);
   const [menuPerfilAberto, setMenuPerfilAberto] = useState(false);
-  const [menuTelemovelAberto, setMenuTelemovelAberto] = useState(false);
   const [extraSelecionado, setExtraSelecionado] = useState<string[]>([]);
   const [observacoes, setObservacoes] = useState("");
   const [mensagem, setMensagem] = useState("");
@@ -271,7 +271,7 @@ export default function ClienteDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 text-[#0B192C]">
+      <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
         <header className="bg-[#0B192C] text-white py-4 px-8 shadow-md flex justify-between items-center border-b border-slate-800">
           <div className="flex items-center space-x-3">
             <div className="bg-[#00D4FF]/10 p-2 rounded-xl border border-[#00D4FF]/20">
@@ -302,7 +302,7 @@ export default function ClienteDashboard() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-50 text-[#0B192C]">
+      <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
         <header className="bg-[#0B192C] text-white py-4 px-8 shadow-md flex justify-between items-center border-b border-slate-800">
           <div className="flex items-center space-x-3">
             <div className="bg-[#00D4FF]/10 p-2 rounded-xl border border-[#00D4FF]/20">
@@ -340,7 +340,7 @@ export default function ClienteDashboard() {
   const nomeCurto = cliente?.name?.split(" ")[0] || "Cliente";
 
   return (
-    <div className="min-h-screen bg-slate-50 text-[#0B192C]">
+    <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
       <a
         href="#conteudo"
         className="sr-only z-[60] rounded-lg bg-white p-3 focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
@@ -357,7 +357,7 @@ export default function ClienteDashboard() {
             </span>
           </Link>
 
-          <nav className="hidden items-center gap-5 text-sm font-medium text-slate-300 md:flex" aria-label="Navegação principal">
+          <nav className="hidden items-center gap-5 text-sm font-medium text-slate-300 xl:flex" aria-label="Navegação principal">
             <Link href="/cliente" className="text-[#00D4FF]">Início</Link>
             <Link href="/cliente/pedidos" className="transition hover:text-white">Marcações</Link>
             <Link href="/cliente/extras" className="transition hover:text-white">Serviços extra</Link>
@@ -431,44 +431,12 @@ export default function ClienteDashboard() {
                 </div>
               )}
             </div>
-
-            <button
-              type="button"
-              aria-label={menuTelemovelAberto ? "Fechar menu" : "Abrir menu"}
-              aria-expanded={menuTelemovelAberto}
-              onClick={() => setMenuTelemovelAberto(!menuTelemovelAberto)}
-              className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-lg md:hidden focus:outline-none focus:ring-2 focus:ring-[#00D4FF]"
-            >
-              {menuTelemovelAberto ? "✕" : "☰"}
-            </button>
           </div>
         </div>
-
-        {menuTelemovelAberto && (
-          <nav className="space-y-1 border-t border-white/10 px-4 py-3 md:hidden" aria-label="Menu móvel">
-            {[
-              ["/cliente", "Início"],
-              ["/cliente/pedidos", "As minhas marcações"],
-              ["/cliente/extras", "Serviços extra"],
-              ["/cliente/loja", "Loja de produtos"],
-              ["/cliente/perfil", "O meu perfil"],
-            ].map(([href, label]) => (
-              <Link key={href} href={href} onClick={() => setMenuTelemovelAberto(false)} className="block rounded-lg px-3 py-3 text-sm text-slate-200 hover:bg-white/10">
-                {label}
-              </Link>
-            ))}
-            <button
-              onClick={handleLogout}
-              className="block rounded-lg px-3 py-3 text-sm font-semibold text-rose-300 hover:bg-white/10"
-            >
-              Terminar sessão
-            </button>
-          </nav>
-        )}
       </header>
 
-      <main id="conteudo" className="mx-auto max-w-7xl space-y-8 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        <section className="flex flex-col justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:p-7">
+      <main id="conteudo" className="mx-auto max-w-7xl space-y-5 px-4 py-5 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:space-y-7 sm:px-6 sm:py-8 sm:pb-32 xl:pb-8 lg:px-8">
+        <section className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-900/[0.02] sm:flex-row sm:items-center sm:p-7">
           <div>
             <p className="text-sm font-bold uppercase tracking-wider text-sky-700">A sua área pessoal</p>
             <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
@@ -484,7 +452,7 @@ export default function ClienteDashboard() {
         </section>
 
         {proximoServico ? (
-          <section aria-labelledby="marcacao-titulo" className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <section aria-labelledby="marcacao-titulo" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="bg-[#0B192C] p-5 text-white sm:p-7 lg:flex lg:items-center lg:justify-between lg:gap-8">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -539,7 +507,7 @@ export default function ClienteDashboard() {
             </div>
           </section>
         ) : (
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm text-center">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm text-center">
             <h2 className="text-lg font-bold text-[#0B192C] mb-4">Não tem serviços agendados</h2>
             <p className="text-slate-600 text-sm mb-6">
               Neste momento não tem nenhuma limpeza agendada. Pode solicitar um novo serviço abaixo.
@@ -565,7 +533,7 @@ export default function ClienteDashboard() {
           ))}
         </section>
 
-        <section id="servicos-extra" className="scroll-mt-28 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+        <section id="servicos-extra" className="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-sky-700">Personalize a sua visita</p>
@@ -682,7 +650,7 @@ export default function ClienteDashboard() {
           </section>
         )}
 
-        <section id="apoio" className="scroll-mt-28 rounded-3xl bg-[#0B192C] p-5 text-white shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-7">
+        <section id="apoio" className="scroll-mt-28 rounded-2xl bg-[#0B192C] p-5 text-white shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-7">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-[#00D4FF]">Conte connosco</p>
             <h2 className="mt-1 text-xl font-extrabold">Precisa de ajuda?</h2>
@@ -694,6 +662,7 @@ export default function ClienteDashboard() {
         </section>
       </main>
 
+      <ClientBottomNav />
       <footer className="border-t border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-500">
         <p>© 2026 R&R Services. Todos os direitos reservados.</p>
         <div className="mt-2 flex justify-center gap-4">

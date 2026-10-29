@@ -16,6 +16,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [viewingClient, setViewingClient] = useState<Client | null>(null)
   const [clientOrders, setClientOrders] = useState<any[]>([])
   const [gerandoAcesso, setGerandoAcesso] = useState(false)
@@ -69,6 +70,44 @@ export default function ClientsPage() {
       alert('Cliente registado com sucesso!')
     }
     setSubmitting(false)
+  }
+
+  function handleEditClient(client: Client) {
+    setEditingClient(client)
+    setName(client.name)
+    setPhone(client.phone)
+    setEmail(client.email)
+    setAddress(client.address || '')
+    setViewingClient(null)
+  }
+
+  async function handleUpdateClient(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editingClient) return
+    setSubmitting(true)
+    const formattedEmail = email || `${phone.replace(/\s+/g, '')}@rrservices.pt`
+    const { error } = await supabase.from('clients').update({ name, phone, email: formattedEmail, address }).eq('id', editingClient.id)
+    if (error) {
+      alert('Erro ao atualizar cliente: ' + error.message)
+    } else {
+      setClients(current => current.map(client => client.id === editingClient.id ? { ...client, name, phone, email: formattedEmail, address } : client).sort((a, b) => a.name.localeCompare(b.name, 'pt')))
+      setEditingClient(null)
+      setName('')
+      setPhone('')
+      setEmail('')
+      setAddress('')
+      alert('Cliente atualizado com sucesso!')
+    }
+    setSubmitting(false)
+  }
+
+  function closeClientForm() {
+    setShowAddModal(false)
+    setEditingClient(null)
+    setName('')
+    setPhone('')
+    setEmail('')
+    setAddress('')
   }
 
   async function handleGerarAcessoWhatsApp(client: Client) {
@@ -142,6 +181,7 @@ export default function ClientsPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C]">Carteira de Clientes</h1>
           <p className="text-slate-500 text-xs sm:text-sm mt-1">Consulte fichas 360°, contactos e gere acessos ao portal.</p>
+          <p className="text-slate-400 text-xs mt-2">{loading ? 'A carregar...' : `${filtered.length} ${filtered.length === 1 ? 'cliente' : 'clientes'}${searchTerm ? ' encontrados' : ' registados'}`}</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
           <input
@@ -149,19 +189,40 @@ export default function ClientsPage() {
             placeholder="🔍 Pesquisar cliente..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            aria-label="Pesquisar clientes por nome, telemóvel ou e-mail"
             className="px-4 py-3 sm:py-2 border border-slate-300 rounded-xl bg-white text-sm sm:text-xs outline-none focus:ring-2 focus:ring-[#00D4FF] w-full sm:w-64"
           />
           <button
             onClick={() => setShowAddModal(true)}
-            className="bg-[#0B192C] text-white px-5 py-3 sm:py-2.5 rounded-xl font-bold text-xs hover:bg-slate-800 transition cursor-pointer shadow-sm text-center shrink-0"
+            className="bg-[#0B192C] text-white min-h-11 px-5 py-3 sm:py-2.5 rounded-xl font-bold text-xs hover:bg-slate-800 transition cursor-pointer shadow-sm text-center shrink-0"
           >
             + Novo Cliente
           </button>
         </div>
       </div>
 
+      <div className="space-y-3 lg:hidden">
+        {loading ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">A carregar clientes...</div>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">Nenhum cliente encontrado.</div>
+        ) : filtered.map((client) => (
+          <article key={client.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-bold text-[#0B192C]">{client.name}</h2>
+              <a href={`tel:${client.phone.replace(/\s+/g, '')}`} className="mt-1 inline-flex min-h-10 items-center text-sm text-slate-600">{client.phone}</a>
+              <p className="truncate text-sm text-slate-500">{client.email}</p>
+              <p className="mt-1 line-clamp-2 text-sm text-slate-500">{client.address || 'Sem morada'}</p>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button onClick={() => handleEditClient(client)} className="min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 transition hover:border-[#00D4FF] hover:bg-slate-50">✏️ Editar</button>
+              <button onClick={() => handleOpenView(client)} className="min-h-11 rounded-xl bg-cyan-50 px-3 text-sm font-bold text-[#0B192C] transition hover:bg-cyan-100">Ficha 360°</button>
+            </div>
+          </article>
+        ))}
+      </div>
       {/* TABELA COM SCROLL HORIZONTAL PARA MOBILE */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="hidden overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:block">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm min-w-[650px]">
             <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-bold">
@@ -186,12 +247,20 @@ export default function ClientsPage() {
                     <td className="p-4 text-slate-500 text-xs">{c.email}</td>
                     <td className="p-4 text-slate-600 text-xs">{c.address || 'Sem morada'}</td>
                     <td className="p-4 text-right">
+                      <div className="flex justify-end items-center gap-2">
+                      <button
+                        onClick={() => handleEditClient(c)}
+                        className="bg-white border border-slate-200 text-slate-700 min-h-11 font-bold px-3 py-2 rounded-xl text-xs hover:border-[#00D4FF] hover:bg-slate-50 transition cursor-pointer"
+                      >
+                        ✏️ Editar
+                      </button>
                       <button
                         onClick={() => handleOpenView(c)}
-                        className="bg-[#00D4FF]/10 text-[#0B192C] font-bold px-3.5 py-2 rounded-xl text-xs hover:bg-[#00D4FF]/25 transition cursor-pointer inline-block"
+                        className="bg-[#00D4FF]/10 text-[#0B192C] min-h-11 font-bold px-3.5 py-2 rounded-xl text-xs hover:bg-[#00D4FF]/25 transition cursor-pointer inline-block"
                       >
                         👁️ Ficha 360°
                       </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -202,14 +271,14 @@ export default function ClientsPage() {
       </div>
 
       {/* MODAL NOVO CLIENTE (Adaptado para iPhone/Mobile) */}
-      {showAddModal && (
+      {(showAddModal || editingClient) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl my-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg sm:text-xl font-bold text-[#0B192C]">Registar Novo Cliente</h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 font-bold p-2">✕</button>
+              <h3 className="text-lg sm:text-xl font-bold text-[#0B192C]">{editingClient ? 'Editar Cliente' : 'Registar Novo Cliente'}</h3>
+              <button onClick={closeClientForm} aria-label="Fechar formulário" className="text-slate-400 font-bold p-2">✕</button>
             </div>
-            <form onSubmit={handleCreateClient} className="space-y-4">
+            <form onSubmit={editingClient ? handleUpdateClient : handleCreateClient} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Nome Completo *</label>
                 <input type="text" required placeholder="Nome Completo" value={name} onChange={e => setName(e.target.value)} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]" />
@@ -227,9 +296,9 @@ export default function ClientsPage() {
                 <textarea placeholder="Rua, número, andar..." value={address} onChange={e => setAddress(e.target.value)} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 h-20 outline-none focus:ring-2 focus:ring-[#00D4FF]" />
               </div>
               <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setShowAddModal(false)} className="w-full sm:w-auto px-4 py-3 sm:py-2 text-xs font-bold text-slate-600">Cancelar</button>
+                <button type="button" onClick={closeClientForm} className="w-full sm:w-auto px-4 py-3 sm:py-2 text-xs font-bold text-slate-600">Cancelar</button>
                 <button type="submit" disabled={submitting} className="w-full sm:w-auto px-5 py-3.5 sm:py-2.5 bg-[#0B192C] text-white rounded-xl text-xs font-bold cursor-pointer shadow">
-                  {submitting ? 'A guardar...' : 'Guardar Cliente'}
+                  {submitting ? 'A guardar...' : editingClient ? 'Guardar alterações' : 'Guardar Cliente'}
                 </button>
               </div>
             </form>
@@ -280,6 +349,12 @@ export default function ClientsPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row justify-between items-center pt-2 border-t gap-3">
+              <button
+                onClick={() => handleEditClient(viewingClient)}
+                className="w-full sm:w-auto text-xs font-bold text-[#0B192C] hover:underline cursor-pointer py-2 text-center"
+              >
+                ✏️ Editar dados
+              </button>
               <button
                 onClick={() => handleDeleteClient(viewingClient.id, viewingClient.name)}
                 className="w-full sm:w-auto text-xs font-bold text-red-600 hover:underline cursor-pointer py-2 text-center"

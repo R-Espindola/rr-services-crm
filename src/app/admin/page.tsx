@@ -224,7 +224,7 @@ export default function AdminDashboard() {
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-5 sm:space-y-7">
       {dashboardError && (
         <div className="bg-red-50 border border-red-200 p-4 rounded-xl text-red-800 text-sm font-medium text-center">
           {dashboardError}
@@ -232,7 +232,7 @@ export default function AdminDashboard() {
       )}
 
       {/* 1. AÇÕES RÁPIDAS DE GESTÃO (FIXO NO TOPO) */}
-      <section className="bg-[#0B192C] text-white p-5 sm:p-6 rounded-3xl shadow-md border border-slate-800">
+      <section className="bg-[#0B192C] text-white p-5 sm:p-6 rounded-2xl shadow-md border border-slate-800">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
             <h2 className="text-lg sm:text-xl font-extrabold text-[#00D4FF]">Ações Rápidas de Gestão</h2>
@@ -244,28 +244,28 @@ export default function AdminDashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 w-full lg:w-auto">
             <Link
               href="/admin/clientes"
-              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs py-3 px-3.5 rounded-xl border border-slate-700 transition text-center shadow-sm"
+              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs min-h-11 py-3 px-3.5 rounded-xl border border-slate-700 transition text-center shadow-sm"
             >
               + Novo Cliente
             </Link>
 
             <Link
               href="/admin/servicos"
-              className="bg-[#00D4FF] hover:bg-[#00c2ea] text-[#0B192C] font-extrabold text-xs py-3 px-3.5 rounded-xl transition text-center shadow-sm"
+              className="bg-[#00D4FF] hover:bg-[#00c2ea] text-[#0B192C] font-extrabold text-xs min-h-11 py-3 px-3.5 rounded-xl transition text-center shadow-sm"
             >
               + Agendar Limpeza
             </Link>
 
             <Link
               href="/admin/orcamentos"
-              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs py-3 px-3.5 rounded-xl border border-slate-700 transition text-center shadow-sm"
+              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs min-h-11 py-3 px-3.5 rounded-xl border border-slate-700 transition text-center shadow-sm"
             >
               + Criar Orçamento
             </Link>
 
             <Link
               href="/admin/loja"
-              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs py-3 px-3.5 rounded-xl border border-slate-700 transition text-center shadow-sm"
+              className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs min-h-11 py-3 px-3.5 rounded-xl border border-slate-700 transition text-center shadow-sm"
             >
               + Produto / Stock
             </Link>
@@ -282,10 +282,10 @@ export default function AdminDashboard() {
       </div>
 
       {/* 3. CARTÕES DE MÉTRICAS OPERACIONAIS */}
-      <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-6">
         {metricasLoading ? (
           Array.from({ length: 6 }).map((_, idx) => (
-            <div key={idx} className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between group">
+            <div key={idx} className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm transition duration-200 flex flex-col justify-between group">
               <div>
                 <span className="text-[10px] font-extrabold uppercase text-slate-400 block tracking-wider">Carregando...</span>
                 <span className="text-2xl sm:text-3xl font-black text-[#0B192C] block my-2 animate-pulse">-</span>
@@ -298,7 +298,7 @@ export default function AdminDashboard() {
             <Link
               key={idx}
               href={item.link}
-              className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-sm hover:border-[#00D4FF] transition flex flex-col justify-between group"
+              className="group flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition duration-200 hover:border-cyan-300 hover:shadow-md sm:p-5"
             >
               <div>
                 <span className="text-[10px] font-extrabold uppercase text-slate-400 block tracking-wider">
@@ -319,7 +319,7 @@ export default function AdminDashboard() {
       {/* 4. BLOCOS DE REGISTOS RECENTES & INTERVENÇÕES DO DIA */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Intervenções de Hoje */}
-        <section className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+        <section className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
             <h3 className="font-extrabold text-base text-[#0B192C]">🧹 Intervenções Agendadas</h3>
             <Link href="/admin/servicos" className="text-xs font-bold text-[#00D4FF] hover:underline">
@@ -334,10 +334,10 @@ export default function AdminDashboard() {
           ) : (
             <div className="space-y-3">
               {intervencoesHoje.map((intervencao) => (
-                <div key={intervencao.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
+                  <div key={intervencao.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
                   <div>
-                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-md">
-                      Hoje • {new Date(intervencao.scheduled_date).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${intervencao.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : intervencao.status === 'cancelled' ? 'bg-rose-100 text-rose-800' : intervencao.status === 'in_progress' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {intervencao.status === 'completed' ? 'Concluído' : intervencao.status === 'cancelled' ? 'Cancelado' : intervencao.status === 'in_progress' ? 'Em execução' : 'Pendente'} · {new Date(intervencao.scheduled_date).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
                     </span>
                     <h4 className="font-bold text-sm text-[#0B192C] mt-1">{intervencao.clients?.name || 'Cliente'}</h4>
                     <p className="text-xs text-slate-500">{intervencao.service_type}</p>
@@ -350,7 +350,7 @@ export default function AdminDashboard() {
         </section>
 
         {/* Últimos Registos */}
-        <section className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+        <section className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
             <h3 className="font-extrabold text-base text-[#0B192C]">📋 Últimos Registos do Sistema</h3>
             <Link href="/admin/clientes" className="text-xs font-bold text-[#00D4FF] hover:underline">

@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import ClientBottomNav from "@/app/cliente/ClientBottomNav";
 
 export default function ClientExtrasPage() {
   const [services, setServices] = useState<any[]>([])
@@ -37,36 +38,15 @@ export default function ClientExtrasPage() {
 
     setSubmitting(true)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
       router.push('/login')
       return
     }
-
-    // Obter ID do cliente logado
-    const { data: clientData } = await supabase
-      .from('clients')
-      .select('id')
-      .eq('email', session.user.email)
-      .single()
-
-    if (!clientData) {
-      alert('Perfil de cliente não encontrado.')
-      setSubmitting(false)
-      return
-    }
-
-    // Registar o pedido na base de dados
-    const { error } = await supabase.from('orders').insert([
-      {
-        client_id: clientData.id,
-        service_type: `Extra: ${selectedService.name}`,
-        scheduled_date: new Date().toISOString(), // ou data a definir pela empresa
-        total_amount: selectedService.price || 0,
-        status: 'pending',
-        notes: notes ? `Pedido Extra: ${notes}` : 'Pedido de Serviço Extra',
-      },
-    ])
+    const { error } = await supabase.rpc('solicitar_extra_seguro', {
+      p_service_id: selectedService.id,
+      p_notes: notes || null,
+    })
 
     if (error) {
       alert('Erro ao solicitar serviço: ' + error.message)
@@ -79,7 +59,7 @@ export default function ClientExtrasPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-[#0B192C]">
+    <main className="min-h-dvh bg-slate-50 pb-[calc(5.5rem+env(safe-area-inset-bottom))] text-[#0B192C] xl:pb-0">
       {/* Cabeçalho */}
       <header className="bg-[#0B192C] text-white py-4 px-8 shadow-md flex justify-between items-center border-b border-slate-800">
         <div className="flex items-center space-x-3">
@@ -189,6 +169,7 @@ export default function ClientExtrasPage() {
           </div>
         </div>
       )}
+      <ClientBottomNav />
     </main>
   )
 }

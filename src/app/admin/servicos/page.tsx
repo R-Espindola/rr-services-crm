@@ -154,12 +154,13 @@ export default function AgendaPage() {
     });
 
   return (
-    <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-slate-50 text-[#0B192C] p-4 sm:p-6 md:p-8 space-y-6">
+    <main className="flex min-w-0 flex-1 flex-col space-y-5 overflow-x-hidden bg-[#F5F7FA] text-[#0B192C] sm:space-y-7">
       
       {/* TÍTULO E NAVEGAÇÃO SUPERIOR */}
-      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C]">Agenda Operacional</h1>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-700">CRM · Operações</p>
+          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-[#0B192C] sm:text-3xl">Agenda Operacional</h1>
           <p className="text-slate-500 text-xs sm:text-sm mt-1">Gira as marcações de limpeza em formato de tabela ou calendário.</p>
         </div>
 
@@ -185,7 +186,7 @@ export default function AgendaPage() {
 
           <button
             onClick={() => setShowAddModal(true)}
-            className="bg-[#0B192C] text-white px-5 py-3.5 sm:py-2.5 rounded-xl font-bold text-xs hover:bg-slate-800 transition cursor-pointer shadow-sm text-center"
+            className="min-h-11 rounded-xl bg-[#0B192C] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 sm:py-2.5"
           >
             + Agendar Limpeza
           </button>
@@ -196,14 +197,14 @@ export default function AgendaPage() {
       <ServiceMetrics bookings={orders} />
 
       {/* BARRA DE FILTROS E PESQUISA */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+      <div className="flex flex-col items-stretch justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4 md:flex-row md:items-center">
         <div className="w-full md:w-80">
           <input
             type="text"
             placeholder="🔍 Pesquisar por nome de cliente..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-3 sm:py-2.5 border border-slate-300 rounded-xl bg-slate-50 text-base sm:text-xs outline-none focus:bg-white focus:ring-2 focus:ring-[#00D4FF]"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-500/10"
           />
         </div>
 
@@ -220,7 +221,8 @@ export default function AgendaPage() {
 
       {/* VISÃO 1: TABELA */}
       {viewMode === 'tabela' && (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+        <>
+        <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:block">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[750px]">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-bold">
@@ -290,17 +292,45 @@ export default function AgendaPage() {
             </table>
           </div>
         </div>
+        <div className="space-y-3 lg:hidden">
+          {loading ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">A carregar marcações...</div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Nenhuma limpeza encontrada.</div>
+          ) : filteredOrders.map(order => (
+            <article key={order.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{order.clients?.name || 'Cliente Não Associado'}</p>
+                  <h2 className="mt-1 break-words text-sm font-bold text-[#0B192C]">{order.service_type}</h2>
+                </div>
+                <span className="shrink-0 rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-bold text-cyan-800">{Number(order.total_amount).toFixed(2)} €</span>
+              </div>
+              <div className="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-medium text-slate-500">{new Date(order.scheduled_date).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                <div className="flex items-center gap-2">
+                  <select value={order.status} onChange={(e) => handleStatusChange(order.id, e.target.value)} aria-label={`Estado de ${order.service_type}`} className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold sm:flex-initial">
+                    <option value="pending">Pendente</option><option value="in_progress">Em execução</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option>
+                  </select>
+                  <button onClick={() => setSelectedBooking(order)} className="min-h-11 rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50">Editar</button>
+                  <button onClick={() => handleDeleteOrder(order.id, order.clients?.name || 'Cliente')} aria-label="Eliminar marcação" className="min-h-11 min-w-11 rounded-xl text-rose-600 transition hover:bg-rose-50">×</button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+        </>
       )}
 
       {/* VISÃO 2: CALENDÁRIO */}
       {viewMode === 'calendario' && (
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+        <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="flex justify-between items-center border-b pb-4">
             <h3 className="font-bold text-base sm:text-lg text-[#0B192C]">Vista Mensal de Agendamentos</h3>
             <span className="text-xs text-slate-500 font-semibold">{filteredOrders.length} limpeza(s)</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 sm:gap-4">
             {filteredOrders.length === 0 ? (
               <p className="text-xs text-slate-400 py-6 col-span-full text-center">Nenhuma limpeza encontrada no filtro atual.</p>
             ) : (
