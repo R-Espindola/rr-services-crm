@@ -9,6 +9,7 @@ const linksMenu = [
   { href: '/admin', label: 'Visão Geral', short: 'Início', icone: '📊' },
   { href: '/admin/orcamentos', label: 'Orçamentos', short: 'Orçamentos', icone: '📄' },
   { href: '/admin/clientes', label: 'Clientes', short: 'Clientes', icone: '👥' },
+  { href: '/admin/funcionarios', label: 'Equipas & Trabalhadores', short: 'Equipa', icone: '👷' },
   { href: '/admin/servicos', label: 'Agenda & Equipas', short: 'Agenda', icone: '📅' },
   { href: '/admin/loja', label: 'Loja & Stock', short: 'Loja', icone: '🛒' },
 ];
@@ -69,7 +70,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </div>
 
-      <nav aria-label="Navegação principal" className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-slate-200 bg-white/95 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-12px_36px_rgba(15,23,42,0.10)] backdrop-blur-xl lg:hidden dark:border-white/10 dark:bg-slate-900/95">
+      <nav aria-label="Navegação principal" className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-6 border-t border-slate-200 bg-white/95 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-12px_36px_rgba(15,23,42,0.10)] backdrop-blur-xl lg:hidden dark:border-white/10 dark:bg-slate-900/95">
         {linksMenu.map((item) => {
           const ativo = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(`${item.href}/`));
           return <Link key={item.href} href={item.href} aria-current={ativo ? 'page' : undefined} className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold transition-colors sm:text-[11px] ${ativo ? 'bg-cyan-50 text-[#007F99] dark:bg-cyan-950/50 dark:text-[#00D4FF]' : 'text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5'}`}>

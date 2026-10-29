@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { supabase } from "@/lib/supabase";
 
 type ServicoExtra = {
   id: string;
@@ -10,19 +11,6 @@ type ServicoExtra = {
   imagem: string;
   desc: string;
 };
-
-const servicosExtra: ServicoExtra[] = [
-  { id: "ext-1", titulo: "Interior do forno", preco: 20, imagem: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=85", desc: "Desengorduramento e limpeza profunda." },
-  { id: "ext-2", titulo: "Interior do frigorífico", preco: 18, imagem: "https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=700&q=85", desc: "Higienização e remoção de odores." },
-  { id: "ext-3", titulo: "Vidros e estores", preco: 35, imagem: "https://images.unsplash.com/photo-1527515637462-cff94eecc1ac?auto=format&fit=crop&w=700&q=85", desc: "Limpeza de vidros, caixilharia e estores." },
-  { id: "ext-4", titulo: "Higienização de sofá", preco: 60, imagem: "https://images.unsplash.com/photo-1558317374-067fb5f30001?auto=format&fit=crop&w=700&q=85", desc: "Tratamento de tecidos e remoção de sujidade." },
-];
-
-const produtosLoja = [
-  { id: "prod-1", nome: "Detergente multiusos profissional R&R 1 L", preco: 8.5, imagem: "https://images.unsplash.com/photo-1585421514284-efb74c2b69ba?auto=format&fit=crop&w=700&q=85" },
-  { id: "prod-2", nome: "Kit de 5 panos de microfibra", preco: 6.9, imagem: "https://images.unsplash.com/photo-1610557892470-55d9e80c0bce?auto=format&fit=crop&w=700&q=85" },
-  { id: "prod-3", nome: "Ambientador concentrado Brisa de Verão 500 ml", preco: 12, imagem: "https://images.unsplash.com/photo-1616401784845-180882ba9ba8?auto=format&fit=crop&w=700&q=85" },
-];
 
 const formatarPreco = (valor: number) =>
   new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(valor);
@@ -42,29 +30,102 @@ export default function ClienteDashboard() {
   const [extraSelecionado, setExtraSelecionado] = useState<string[]>([]);
   const [observacoes, setObservacoes] = useState("");
   const [mensagem, setMensagem] = useState("");
+  const [cliente, setCliente] = useState<{ id: string; nome: string; email: string; morada: string | null } | null>(null);
+  const [proximaLimpeza, setProximaLimpeza] = useState<{ id: string; tipo: string; data: string; mes: string; dia: string; diaSemana: string; horario: string; preco: number; estado: string; notas: string | null } | null>(null);
+  const [servicosExtra, setServicosExtra] = useState<ServicoExtra[]>([]);
+  const [produtosLoja, setProdutosLoja] = useState<{ id: string; nome: string; preco: number; imagem: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Dados demonstrativos: substituir pelos dados do cliente autenticado no Supabase.
-  const cliente = {
-    nome: "Maria Fernandes",
-    email: "maria.fernandes@email.com",
-    morada: "Rua das Flores, n.º 42, 2.º Dt.º, Lisboa",
-    proximaLimpeza: {
-      id: "LIM-2026-882",
-      tipo: "Limpeza residencial regular",
-      data: "24 de outubro de 2026",
-      horario: "09:00–12:00",
-      preco: 65,
-      estado: "Confirmada",
-      tarefas: ["Aspirar e lavar pavimentos", "Higienização de casas de banho", "Limpeza da cozinha", "Remoção de pó das superfícies"],
-    },
-  };
+  useEffect(() => {
+    async function carregarDadosCliente() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+          setLoadError("A sua sessão terminou. Inicie sessão novamente para consultar o portal.");
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("clients")
+          .select("id, name, email, address")
+          .eq("auth_user_id", user.id)
+          .maybeSingle();
+        if (profileError || !profile) {
+          setLoadError("Não foi possível encontrar o perfil associado à sua conta.");
+          return;
+        }
+        setCliente({ id: profile.id, nome: profile.name, email: profile.email, morada: profile.address });
+
+        const { data: orders, error: ordersError } = await supabase
+          .from("orders")
+          .select("id, service_type, scheduled_date, total_amount, status, notes")
+          .eq("client_id", profile.id)
+          .in("status", ["pending", "in_progress"])
+          .not("scheduled_date", "is", null)
+          .gte("scheduled_date", new Date().toISOString())
+          .order("scheduled_date", { ascending: true })
+          .limit(1);
+        if (ordersError) {
+          setLoadError("Não foi possível carregar as próximas marcações.");
+          return;
+        }
+        const nextOrder = orders?.[0];
+        if (nextOrder?.scheduled_date) {
+          const date = new Date(nextOrder.scheduled_date);
+          setProximaLimpeza({
+            id: String(nextOrder.id),
+            tipo: nextOrder.service_type,
+            data: date.toLocaleDateString("pt-PT", { day: "2-digit", month: "long", year: "numeric" }),
+            mes: date.toLocaleDateString("pt-PT", { month: "long", year: "numeric" }),
+            dia: date.toLocaleDateString("pt-PT", { day: "2-digit" }),
+            diaSemana: date.toLocaleDateString("pt-PT", { weekday: "short" }),
+            horario: date.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }),
+            preco: Number(nextOrder.total_amount) || 0,
+            estado: nextOrder.status === "in_progress" ? "Em execução" : "Pendente",
+            notas: nextOrder.notes,
+          });
+        } else {
+          setProximaLimpeza(null);
+        }
+
+        const [{ data: services }, { data: products }] = await Promise.all([
+          supabase.from("services_catalog").select("id, name, price, description, image_url, is_available, price_type")
+            .eq("is_available", true).order("category", { ascending: true }),
+          supabase.from("products").select("id, name, price, image_url, is_available, stock_quantity")
+            .eq("is_available", true).gt("stock_quantity", 0).order("name", { ascending: true }),
+        ]);
+        setServicosExtra((services ?? []).map((service) => ({
+          id: service.id,
+          titulo: service.name,
+          preco: service.price_type === "quote" ? 0 : Number(service.price) || 0,
+          imagem: service.image_url || "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=85",
+          desc: service.description || "Sem descrição detalhada.",
+        })));
+        setProdutosLoja((products ?? []).map((product) => ({
+          id: product.id,
+          nome: product.name,
+          preco: Number(product.price) || 0,
+          imagem: product.image_url || "https://images.unsplash.com/photo-1585421514284-efb74c2b69ba?auto=format&fit=crop&w=700&q=85",
+        })));
+      } catch {
+        setLoadError("Ocorreu um erro ao carregar os dados do portal.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    carregarDadosCliente();
+  }, []);
 
   const extrasEscolhidos = useMemo(
     () => servicosExtra.filter((item) => extraSelecionado.includes(item.id)),
     [extraSelecionado],
   );
   const totalExtras = extrasEscolhidos.reduce((total, item) => total + item.preco, 0);
-  const totalEstimado = cliente.proximaLimpeza.preco + totalExtras;
+  const totalEstimado = (proximaLimpeza?.preco ?? 0) + totalExtras;
 
   function alternarExtra(id: string) {
     setMensagem("");
@@ -75,6 +136,13 @@ export default function ClienteDashboard() {
     event.preventDefault();
     if (extraSelecionado.length === 0) return;
     setMensagem("A sua seleção está pronta. Para concluir o pedido, é necessária a ligação deste formulário à API/Supabase da R&R Services.");
+  }
+
+  if (loading) {
+    return <main className="flex min-h-dvh items-center justify-center bg-[#F3F6FA] px-5 text-sm font-semibold text-slate-500">A carregar os seus dados...</main>;
+  }
+  if (loadError || !cliente) {
+    return <main className="flex min-h-dvh items-center justify-center bg-[#F3F6FA] px-5"><div className="max-w-md rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-sm"><p className="text-sm font-semibold text-rose-700">{loadError || "Perfil não encontrado."}</p><Link href="/login" className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-[#0B192C] px-4 text-sm font-bold text-white">Iniciar sessão</Link></div></main>;
   }
 
   return (
@@ -98,11 +166,11 @@ export default function ClienteDashboard() {
               <button type="button" aria-label="Ver notificações" aria-expanded={notificacoesAbertas} onClick={() => { setNotificacoesAbertas(!notificacoesAbertas); setMenuPerfilAberto(false); }} className="relative rounded-xl border border-white/10 bg-white/[0.06] p-3 transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[#00D4FF]">
                 <span aria-hidden="true">♧</span><span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#00D4FF]" />
               </button>
-              {notificacoesAbertas && <div className="absolute right-0 mt-3 w-80 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-[#0B192C] shadow-2xl"><p className="font-extrabold">Notificações</p><p className="mt-2 leading-6 text-slate-600">A sua próxima limpeza está confirmada para {cliente.proximaLimpeza.data}, das {cliente.proximaLimpeza.horario}.</p><Link href="/cliente/pedidos" className="mt-3 inline-block font-bold text-sky-700 hover:underline">Consultar marcação →</Link></div>}
+              {notificacoesAbertas && <div className="absolute right-0 mt-3 w-80 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-[#0B192C] shadow-2xl"><p className="font-extrabold">Notificações</p><p className="mt-2 leading-6 text-slate-600">{proximaLimpeza ? `Próxima marcação: ${proximaLimpeza.data}, às ${proximaLimpeza.horario}.` : "Não tem próximas marcações."}</p>{proximaLimpeza && <Link href="/cliente/pedidos" className="mt-3 inline-block font-bold text-sky-700 hover:underline">Consultar marcação →</Link>}</div>}
             </div>
             <div className="relative">
               <button type="button" aria-expanded={menuPerfilAberto} onClick={() => { setMenuPerfilAberto(!menuPerfilAberto); setNotificacoesAbertas(false); }} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.06] py-1.5 pl-2 pr-3 transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[#00D4FF]">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[#00D4FF] to-cyan-200 text-xs font-black text-[#0B192C]">MF</span>
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[#00D4FF] to-cyan-200 text-xs font-black text-[#0B192C]">{cliente.nome.split(/\s+/).slice(0, 2).map((parte) => parte[0]).join("").toUpperCase()}</span>
                 <span className="text-left"><span className="block text-xs font-bold">{cliente.nome}</span><span className="block text-[10px] text-slate-400">Conta de cliente</span></span><span className="text-xs text-slate-400">⌄</span>
               </button>
               {menuPerfilAberto && <div className="absolute right-0 mt-3 w-60 rounded-2xl border border-slate-200 bg-white py-2 text-sm text-[#0B192C] shadow-2xl"><Link href="/cliente/perfil" className="block px-4 py-3 hover:bg-slate-50">O meu perfil</Link><Link href="/cliente/pedidos" className="block px-4 py-3 hover:bg-slate-50">As minhas marcações</Link><Link href="/login" className="block border-t border-slate-100 px-4 py-3 font-semibold text-rose-600 hover:bg-rose-50">Terminar sessão</Link></div>}
@@ -144,33 +212,33 @@ export default function ClienteDashboard() {
               <Link href="/cliente/perfil" className="inline-flex min-h-12 items-center justify-center gap-2 self-start rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-[#0B192C] transition hover:bg-[#00D4FF] sm:self-auto"><span>◎</span> Gerir o meu perfil</Link>
             </div>
             <div className="mt-8 grid gap-3 border-t border-white/10 pt-5 sm:grid-cols-3">
-              <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF]">▦</span><span><span className="block text-[10px] uppercase tracking-wider text-slate-400">Próxima visita</span><span className="mt-1 block text-sm font-bold">24 out. · 09:00</span></span></div>
-              <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF]">✓</span><span><span className="block text-[10px] uppercase tracking-wider text-slate-400">Estado atual</span><span className="mt-1 block text-sm font-bold text-emerald-300">Marcação confirmada</span></span></div>
-              <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF]">⌂</span><span><span className="block text-[10px] uppercase tracking-wider text-slate-400">Morada guardada</span><span className="mt-1 block text-sm font-bold">Lisboa</span></span></div>
+              <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF]">▦</span><span><span className="block text-[10px] uppercase tracking-wider text-slate-400">Próxima visita</span><span className="mt-1 block text-sm font-bold">{proximaLimpeza ? `${proximaLimpeza.data} · ${proximaLimpeza.horario}` : "Sem marcações futuras"}</span></span></div>
+              <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF]">✓</span><span><span className="block text-[10px] uppercase tracking-wider text-slate-400">Estado atual</span><span className="mt-1 block text-sm font-bold text-emerald-300">{proximaLimpeza?.estado || "Sem marcação"}</span></span></div>
+              <div className="flex min-w-0 items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF]">⌂</span><span className="min-w-0"><span className="block text-[10px] uppercase tracking-wider text-slate-400">Morada guardada</span><span className="mt-1 block truncate text-sm font-bold">{cliente.morada || "Morada não registada"}</span></span></div>
             </div>
           </section>
 
           {/* Próxima intervenção */}
           <section aria-labelledby="marcacao-titulo" className="mt-8">
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-sky-700">Agenda</p><h2 className="mt-1 text-xl font-black tracking-tight sm:text-2xl">A sua próxima intervenção</h2></div><Link href="/cliente/pedidos" className="text-xs font-extrabold text-sky-700 hover:underline">Ver todas as marcações →</Link></div>
-            <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+            {proximaLimpeza ? <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
               <div className="grid lg:grid-cols-[175px_minmax(0,1fr)]">
                 <div className="flex flex-row items-center gap-4 bg-gradient-to-br from-[#00D4FF] to-[#8CEEFF] p-5 text-[#0B192C] lg:flex-col lg:items-start lg:justify-center lg:p-6">
                   <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/60 text-2xl">▦</div>
-                  <div><p className="text-[10px] font-black uppercase tracking-[0.16em]">Outubro 2026</p><p className="mt-1 text-2xl font-black">24 <span className="text-sm font-bold">Sáb.</span></p><p className="mt-1 text-xs font-semibold">09:00–12:00</p></div>
+                  <div><p className="text-[10px] font-black uppercase tracking-[0.16em]">{proximaLimpeza.mes}</p><p className="mt-1 text-2xl font-black">{proximaLimpeza.dia} <span className="text-sm font-bold">{proximaLimpeza.diaSemana}</span></p><p className="mt-1 text-xs font-semibold">{proximaLimpeza.horario}</p></div>
                 </div>
                 <div className="p-5 sm:p-7">
-                  <div className="flex flex-wrap items-center justify-between gap-3"><span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">✓ {cliente.proximaLimpeza.estado}</span><span className="text-xs font-semibold text-slate-400">Ref. {cliente.proximaLimpeza.id}</span></div>
+                  <div className="flex flex-wrap items-center justify-between gap-3"><span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">✓ {proximaLimpeza.estado}</span><span className="text-xs font-semibold text-slate-400">Ref. {proximaLimpeza.id}</span></div>
                   <div className="mt-4 flex flex-col justify-between gap-5 xl:flex-row xl:items-start">
-                    <div className="min-w-0 flex-1"><h3 id="marcacao-titulo" className="text-xl font-black sm:text-2xl">{cliente.proximaLimpeza.tipo}</h3><p className="mt-2 flex items-start gap-2 text-sm leading-6 text-slate-500"><span className="text-sky-700">⌂</span>{cliente.morada}</p>
-                      <div className="mt-5"><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Incluído nesta visita</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{cliente.proximaLimpeza.tarefas.map((tarefa) => <p key={tarefa} className="flex items-start gap-2 text-xs font-medium text-slate-600"><span className="text-emerald-600">✓</span>{tarefa}</p>)}</div></div>
+                    <div className="min-w-0 flex-1"><h3 id="marcacao-titulo" className="text-xl font-black sm:text-2xl">{proximaLimpeza.tipo}</h3><p className="mt-2 flex items-start gap-2 text-sm leading-6 text-slate-500"><span className="text-sky-700">⌂</span>{cliente.morada || "Morada não registada"}</p>
+                      <div className="mt-5"><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Detalhes da marcação</p><p className="mt-3 text-sm leading-6 text-slate-600">{proximaLimpeza.notas || "Sem instruções adicionais registadas."}</p></div>
                     </div>
-                    <div className="flex shrink-0 flex-row items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4 xl:min-w-[190px] xl:flex-col xl:items-start"><div><p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Valor da visita</p><p className="mt-1 text-3xl font-black tracking-tight">{formatarPreco(cliente.proximaLimpeza.preco)}</p></div><Link href="/cliente/pedidos" className="text-xs font-extrabold text-sky-700 hover:underline">Gerir visita →</Link></div>
+                    <div className="flex shrink-0 flex-row items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4 xl:min-w-[190px] xl:flex-col xl:items-start"><div><p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Valor da visita</p><p className="mt-1 text-3xl font-black tracking-tight">{formatarPreco(proximaLimpeza.preco)}</p></div><Link href="/cliente/pedidos" className="text-xs font-extrabold text-sky-700 hover:underline">Gerir visita →</Link></div>
                   </div>
                   <a href="#servicos-extra" className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0B192C] px-5 py-3 text-sm font-extrabold text-white transition hover:bg-[#173957] sm:w-auto"><span className="text-[#00D4FF]">＋</span> Adicionar serviços à visita</a>
                 </div>
               </div>
-            </div>
+            </div> : <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Ainda não tem visitas futuras agendadas. Quando existir uma marcação, os respetivos detalhes aparecerão aqui.</div>}
           </section>
 
           {/* Serviços extra */}
@@ -188,7 +256,7 @@ export default function ClienteDashboard() {
                   </label>;
                 })}
               </div>
-              {extraSelecionado.length > 0 && <div className="mt-5 grid gap-4 rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:grid-cols-[1fr_300px]"><div><label htmlFor="observacoes" className="text-sm font-extrabold">Alguma instrução para a equipa? <span className="font-normal text-slate-400">(opcional)</span></label><textarea id="observacoes" rows={3} maxLength={500} placeholder="Ex.: dar especial atenção ao interior do forno." value={observacoes} onChange={(event) => setObservacoes(event.target.value)} className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100" /><p className="mt-1 text-right text-[10px] text-slate-400">{observacoes.length}/500 caracteres</p><p className="mt-2 text-xs leading-5 text-slate-500">O pedido só fica confirmado depois de ser submetido e validado pela equipa.</p></div><div className="flex flex-col justify-between rounded-2xl bg-[#0B192C] p-5 text-white"><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-400">Resumo da visita</p><div className="mt-4 space-y-3 text-sm"><p className="flex justify-between gap-3 text-slate-300">Serviços extra <strong className="text-white">{formatarPreco(totalExtras)}</strong></p><p className="flex justify-between gap-3 text-slate-300">Valor base <strong className="text-white">{formatarPreco(cliente.proximaLimpeza.preco)}</strong></p></div><div className="my-4 border-t border-white/10" /><p className="text-xs text-slate-400">Total estimado</p><p className="mt-1 text-3xl font-black text-[#00D4FF]">{formatarPreco(totalEstimado)}</p><button type="submit" className="mt-5 min-h-12 rounded-xl bg-[#00D4FF] px-4 py-3 text-sm font-black text-[#0B192C] transition hover:bg-cyan-200 focus:outline-none focus:ring-2 focus:ring-white">Continuar pedido →</button></div></div>}
+              {extraSelecionado.length > 0 && <div className="mt-5 grid gap-4 rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:grid-cols-[1fr_300px]"><div><label htmlFor="observacoes" className="text-sm font-extrabold">Alguma instrução para a equipa? <span className="font-normal text-slate-400">(opcional)</span></label><textarea id="observacoes" rows={3} maxLength={500} placeholder="Ex.: dar especial atenção ao interior do forno." value={observacoes} onChange={(event) => setObservacoes(event.target.value)} className="mt-3 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100" /><p className="mt-1 text-right text-[10px] text-slate-400">{observacoes.length}/500 caracteres</p><p className="mt-2 text-xs leading-5 text-slate-500">O pedido só fica confirmado depois de ser submetido e validado pela equipa.</p></div><div className="flex flex-col justify-between rounded-2xl bg-[#0B192C] p-5 text-white"><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-400">Resumo da visita</p><div className="mt-4 space-y-3 text-sm"><p className="flex justify-between gap-3 text-slate-300">Serviços extra <strong className="text-white">{formatarPreco(totalExtras)}</strong></p><p className="flex justify-between gap-3 text-slate-300">Valor base <strong className="text-white">{formatarPreco(proximaLimpeza?.preco ?? 0)}</strong></p></div><div className="my-4 border-t border-white/10" /><p className="text-xs text-slate-400">Total estimado</p><p className="mt-1 text-3xl font-black text-[#00D4FF]">{formatarPreco(totalEstimado)}</p><button type="submit" className="mt-5 min-h-12 rounded-xl bg-[#00D4FF] px-4 py-3 text-sm font-black text-[#0B192C] transition hover:bg-cyan-200 focus:outline-none focus:ring-2 focus:ring-white">Continuar pedido →</button></div></div>}
             </form>
           </section>
 

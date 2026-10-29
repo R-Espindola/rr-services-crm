@@ -120,18 +120,18 @@ export default function ClienteDashboard() {
     setError(null);
 
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session?.user?.email) {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
         setError("Sess\u00e3o n\u00e3o encontrada.");
         setLoading(false);
         return;
       }
 
-      // 1. Carregar perfil do cliente pelo email autenticado
+      // 1. Carregar o perfil ligado ao ID autenticado (não confiar em email do cliente)
       const { data: clientData, error: clientError } = await supabase
         .from("clients")
         .select("id, name, email, phone, address, notes")
-        .eq("email", session.user.email)
+        .eq("auth_user_id", user.id)
         .single();
 
       if (clientError || !clientData) {

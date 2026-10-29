@@ -20,7 +20,10 @@ export async function middleware(request: NextRequest) {
   )
 
   const path = request.nextUrl.pathname
-  const protectedRoute = path.startsWith('/admin') || path.startsWith('/cliente')
+  const adminRoute = path.startsWith('/admin')
+  const clientRoute = path.startsWith('/cliente')
+  const workerRoute = path.startsWith('/trabalhador')
+  const protectedRoute = adminRoute || clientRoute || workerRoute
   const loginRoute = path === '/login'
   if (!protectedRoute && !loginRoute) return response
 
@@ -41,23 +44,39 @@ export async function middleware(request: NextRequest) {
     .eq('email', user.email ?? '')
     .maybeSingle()
 
-  // Fail closed: missing profile or lookup failure never grants admin access.
-  const role = profileError ? null : profile?.role ?? 'client'
-  if (path.startsWith('/admin') && role !== 'admin') {
+  const { data: workerProfile, error: workerError } = await supabase
+    .from('worker_profiles')
+    .select('active')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  // Fail closed: a worker must have an active, explicitly provisioned profile.
+  const role = !profileError && profile?.role === 'admin'
+    ? 'admin'
+    : !workerError && workerProfile?.active
+      ? 'worker'
+      : 'client'
+  if (adminRoute && role !== 'admin') {
     const url = request.nextUrl.clone()
-    url.pathname = '/cliente'
+    url.pathname = role === 'worker' ? '/trabalhador/agenda' : '/cliente'
     url.search = ''
     return NextResponse.redirect(url)
   }
-  if (path.startsWith('/cliente') && role === 'admin') {
+  if (clientRoute && role !== 'client') {
     const url = request.nextUrl.clone()
-    url.pathname = '/admin'
+    url.pathname = role === 'admin' ? '/admin' : '/trabalhador/agenda'
+    url.search = ''
+    return NextResponse.redirect(url)
+  }
+  if (workerRoute && role !== 'worker') {
+    const url = request.nextUrl.clone()
+    url.pathname = role === 'admin' ? '/admin' : '/cliente'
     url.search = ''
     return NextResponse.redirect(url)
   }
   if (loginRoute) {
     const url = request.nextUrl.clone()
-    url.pathname = role === 'admin' ? '/admin' : '/cliente'
+    url.pathname = role === 'admin' ? '/admin' : role === 'worker' ? '/trabalhador/agenda' : '/cliente'
     url.search = ''
     return NextResponse.redirect(url)
   }

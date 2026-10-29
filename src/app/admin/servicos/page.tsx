@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import ServiceMetrics from './ServiceMetrics';
 import BookingDetailsModal from './BookingDetailsModal';
+import { atribuirFuncionarioAMarcacao, listAssignableWorkers, type AssignableWorker } from './actions';
 
 export interface Order {
   id: string;
@@ -12,6 +13,7 @@ export interface Order {
   scheduled_date: string;
   total_amount: number;
   status: string;
+  worker_user_id?: string | null;
   notes?: string;
   clients?: {
     name: string;
@@ -30,6 +32,10 @@ export interface ClientOption {
 export default function AgendaPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [clientsList, setClientsList] = useState<ClientOption[]>([]);
+  const [workersList, setWorkersList] = useState<AssignableWorker[]>([]);
+  const [workersLoading, setWorkersLoading] = useState(true);
+  const [assignmentBusy, setAssignmentBusy] = useState<string | null>(null);
+  const [assignmentFeedback, setAssignmentFeedback] = useState<{ message: string; error: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'tabela' | 'calendario'>('tabela');
   
@@ -44,6 +50,7 @@ export default function AgendaPage() {
   // Estado do Modal de Novo Agendamento
   const [submitting, setSubmitting] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedWorkerUserId, setSelectedWorkerUserId] = useState('');
   const [serviceType, setServiceType] = useState('Limpeza Residencial');
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('09:00');
@@ -53,7 +60,21 @@ export default function AgendaPage() {
   useEffect(() => {
     fetchOrders();
     fetchClients();
+    fetchWorkers();
   }, []);
+
+  async function fetchWorkers() {
+    setWorkersLoading(true);
+    try {
+      const result = await listAssignableWorkers();
+      if (result.success) setWorkersList(result.data);
+      else setAssignmentFeedback({ message: result.error, error: true });
+    } catch {
+      setAssignmentFeedback({ message: 'Não foi possível carregar os funcionários.', error: true });
+    } finally {
+      setWorkersLoading(false);
+    }
+  }
 
   async function fetchOrders() {
     setLoading(true);
@@ -96,7 +117,8 @@ export default function AgendaPage() {
         scheduled_date: fullDateTime,
         total_amount: parseFloat(totalAmount) || 0,
         status: 'pending',
-        notes: notes
+        notes: notes,
+        worker_user_id: selectedWorkerUserId || null,
       }
     ]);
 
@@ -106,6 +128,7 @@ export default function AgendaPage() {
       alert('Limpeza agendada com sucesso!');
       setShowAddModal(false);
       setSelectedClientId('');
+      setSelectedWorkerUserId('');
       setScheduledDate('');
       setNotes('');
       fetchOrders();
@@ -123,6 +146,31 @@ export default function AgendaPage() {
       alert('Erro ao atualizar estado: ' + error.message);
     } else {
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
+    }
+  }
+
+  async function handleWorkerAssignment(orderId: string, workerUserId: string) {
+    const previous = orders.find((order) => order.id === orderId)?.worker_user_id ?? null;
+    setAssignmentBusy(orderId);
+    setAssignmentFeedback(null);
+    try {
+      const result = await atribuirFuncionarioAMarcacao(orderId, workerUserId);
+      if (!result.success) {
+        setAssignmentFeedback({ message: result.error, error: true });
+        return;
+      }
+      setOrders((current) => current.map((order) => order.id === orderId
+        ? { ...order, worker_user_id: result.data.workerUserId }
+        : order));
+      setAssignmentFeedback({
+        message: result.data.workerName ? `Marcação atribuída a ${result.data.workerName}.` : 'A marcação ficou sem funcionário atribuído.',
+        error: false,
+      });
+    } catch {
+      setAssignmentFeedback({ message: 'Não foi possível guardar a atribuição. Tente novamente.', error: true });
+      setOrders((current) => current.map((order) => order.id === orderId ? { ...order, worker_user_id: previous } : order));
+    } finally {
+      setAssignmentBusy(null);
     }
   }
 
@@ -195,6 +243,7 @@ export default function AgendaPage() {
 
       {/* COMPONENTE DE MÉTRICAS */}
       <ServiceMetrics bookings={orders} />
+      {assignmentFeedback && <p role={assignmentFeedback.error ? 'alert' : 'status'} className={`rounded-xl border px-4 py-3 text-sm font-semibold ${assignmentFeedback.error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{assignmentFeedback.message}</p>}
 
       {/* BARRA DE FILTROS E PESQUISA */}
       <div className="flex flex-col items-stretch justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4 md:flex-row md:items-center">
@@ -230,6 +279,7 @@ export default function AgendaPage() {
                   <th className="p-4">Cliente</th>
                   <th className="p-4">Serviço</th>
                   <th className="p-4">Data & Hora</th>
+                  <th className="p-4">Funcionário</th>
                   <th className="p-4">Valor (€)</th>
                   <th className="p-4">Estado</th>
                   <th className="p-4 text-right">Ações</th>
@@ -237,9 +287,9 @@ export default function AgendaPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {loading ? (
-                  <tr><td colSpan={6} className="text-center py-10 text-slate-400">A carregar marcações...</td></tr>
+                  <tr><td colSpan={7} className="text-center py-10 text-slate-400">A carregar marcações...</td></tr>
                 ) : filteredOrders.length === 0 ? (
-                  <tr><td colSpan={6} className="text-center py-10 text-slate-400">Nenhuma limpeza encontrada.</td></tr>
+                  <tr><td colSpan={7} className="text-center py-10 text-slate-400">Nenhuma limpeza encontrada.</td></tr>
                 ) : (
                   filteredOrders.map(order => (
                     <tr key={order.id} className="hover:bg-slate-50 transition">
@@ -253,6 +303,19 @@ export default function AgendaPage() {
                           hour: '2-digit',
                           minute: '2-digit'
                         })}
+                      </td>
+                      <td className="p-4">
+                        <select
+                          value={order.worker_user_id ?? ''}
+                          disabled={workersLoading || assignmentBusy === order.id}
+                          onChange={(event) => void handleWorkerAssignment(order.id, event.target.value)}
+                          aria-label={`Funcionário atribuído a ${order.clients?.name || order.service_type}`}
+                          className="min-h-10 min-w-40 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:cursor-wait disabled:opacity-60"
+                        >
+                          <option value="">Sem funcionário</option>
+                          {workersList.filter((worker) => worker.active || worker.user_id === order.worker_user_id).map((worker) => <option key={worker.user_id} value={worker.user_id} disabled={!worker.active}>{worker.display_name}{worker.active ? '' : ' (inativo)'}</option>)}
+                        </select>
+                        {assignmentBusy === order.id && <span className="mt-1 block text-[10px] text-slate-400">A guardar...</span>}
                       </td>
                       <td className="p-4 font-extrabold text-[#0B192C]">{Number(order.total_amount).toFixed(2)} €</td>
                       <td className="p-4">
@@ -306,6 +369,7 @@ export default function AgendaPage() {
                 </div>
                 <span className="shrink-0 rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-bold text-cyan-800">{Number(order.total_amount).toFixed(2)} €</span>
               </div>
+              <div className="mt-3"><label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Funcionário atribuído</label><select value={order.worker_user_id ?? ''} disabled={workersLoading || assignmentBusy === order.id} onChange={(event) => void handleWorkerAssignment(order.id, event.target.value)} aria-label={`Funcionário atribuído a ${order.clients?.name || order.service_type}`} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:cursor-wait disabled:opacity-60"><option value="">Sem funcionário</option>{workersList.filter((worker) => worker.active || worker.user_id === order.worker_user_id).map((worker) => <option key={worker.user_id} value={worker.user_id} disabled={!worker.active}>{worker.display_name}{worker.active ? '' : ' (inativo)'}</option>)}</select></div>
               <div className="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs font-medium text-slate-500">{new Date(order.scheduled_date).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                 <div className="flex items-center gap-2">
@@ -358,6 +422,7 @@ export default function AgendaPage() {
                       Editar Detalhes
                     </button>
                   </div>
+                  <div className="border-t border-slate-200 pt-3"><label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Funcionário</label><select value={order.worker_user_id ?? ''} disabled={workersLoading || assignmentBusy === order.id} onChange={(event) => void handleWorkerAssignment(order.id, event.target.value)} aria-label={`Funcionário atribuído a ${order.clients?.name || order.service_type}`} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:opacity-60"><option value="">Sem funcionário</option>{workersList.filter((worker) => worker.active || worker.user_id === order.worker_user_id).map((worker) => <option key={worker.user_id} value={worker.user_id} disabled={!worker.active}>{worker.display_name}{worker.active ? '' : ' (inativo)'}</option>)}</select></div>
                 </div>
               ))
             )}
@@ -412,6 +477,14 @@ export default function AgendaPage() {
                   <option value="Limpeza Comercial / Escritório">Limpeza Comercial / Escritório</option>
                   <option value="Extra: Limpeza de Forno">Extra: Limpeza de Forno</option>
                   <option value="Extra: Limpeza de Frigorífico">Extra: Limpeza de Frigorífico</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Funcionário (opcional)</label>
+                <select value={selectedWorkerUserId} onChange={(e) => setSelectedWorkerUserId(e.target.value)} disabled={workersLoading} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF] disabled:opacity-60">
+                  <option value="">Sem funcionário atribuído</option>
+                  {workersList.filter((worker) => worker.active).map((worker) => <option key={worker.user_id} value={worker.user_id}>{worker.display_name}</option>)}
                 </select>
               </div>
 

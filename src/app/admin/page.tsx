@@ -20,10 +20,12 @@ interface Order {
   total_amount: number;
   status: string;
   notes?: string;
+  worker_user_id?: string | null;
   clients?: {
     name: string;
     phone: string;
   };
+  worker_profiles?: { display_name: string } | null;
 }
 
 interface Client {
@@ -90,7 +92,7 @@ export default function AdminDashboard() {
       // 2. Serviços agendados para hoje
       const { data: ordersHoje, error: errorHoje } = await supabase
         .from('orders')
-        .select('*, clients(name, phone)')
+        .select('*, clients(name, phone), worker_profiles(display_name)')
         .gte('scheduled_date', inicioDoDia())
         .lte('scheduled_date', fimDoDia())
         .order('scheduled_date', { ascending: true });
@@ -220,7 +222,8 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    carregarMetricas();
+    const request = window.setTimeout(() => { void carregarMetricas(); }, 0);
+    return () => window.clearTimeout(request);
   }, []);
 
   return (
@@ -341,6 +344,7 @@ export default function AdminDashboard() {
                     </span>
                     <h4 className="font-bold text-sm text-[#0B192C] mt-1">{intervencao.clients?.name || 'Cliente'}</h4>
                     <p className="text-xs text-slate-500">{intervencao.service_type}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-600">👷 {intervencao.worker_profiles?.display_name || 'Sem funcionário'}</p>
                   </div>
                   <span className="text-sm font-extrabold text-[#0B192C]">{formatarPreco(intervencao.total_amount)}</span>
                 </div>
