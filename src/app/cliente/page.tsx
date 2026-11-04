@@ -13,6 +13,7 @@ interface Client {
   postal_code?: string | null;
   locality?: string | null;
   notes?: string | null;
+  payment_terms?: string | null; // Adicionado para suportar faturas mensais vs por serviço
 }
 
 interface Order {
@@ -22,6 +23,7 @@ interface Order {
   scheduled_date: string | null;
   total_amount: number;
   status: string;
+  payment_status?: string | null; // Adicionado para controlo de pagamento
   notes?: string | null;
 }
 
@@ -114,10 +116,10 @@ export default function ClienteDashboard() {
         return;
       }
 
-      // 1. Carregar o perfil ligado ao ID autenticado (não confiar em email do cliente)
+      // 1. Carregar o perfil ligado ao ID autenticado incluindo o campo payment_terms
       const { data: clientData, error: clientError } = await supabase
         .from("clients")
-        .select("id, name, email, phone, address, postal_code, locality, notes")
+        .select("id, name, email, phone, address, postal_code, locality, notes, payment_terms")
         .eq("auth_user_id", user.id)
         .single();
 
@@ -259,7 +261,6 @@ export default function ClienteDashboard() {
   if (loading) {
     return (
       <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
-
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           <div className="text-center py-20 text-slate-400 font-medium">
             A carregar o seu portal...
@@ -272,7 +273,6 @@ export default function ClienteDashboard() {
   if (error) {
     return (
       <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
-
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           <div className="bg-red-50 border border-red-200 p-6 rounded-2xl text-center text-red-800 text-sm font-medium">
             {error}
@@ -299,8 +299,6 @@ export default function ClienteDashboard() {
         Saltar para o conteúdo
       </a>
 
-
-
       <main id="conteudo" className="mx-auto max-w-7xl space-y-5 px-4 py-5 pb-8 sm:space-y-7 sm:px-6 sm:py-8 lg:px-8">
         <section className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-900/[0.02] sm:flex-row sm:items-center sm:p-7">
           <div>
@@ -309,7 +307,7 @@ export default function ClienteDashboard() {
               Olá, {nomeCurto} <span aria-hidden="true">👋</span>
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Consulte a sua próxima visita, geriu os seus serviços e encontre ajuda sempre que precisar.
+              Consulte a sua próxima visita, gerir os seus serviços e encontre ajuda sempre que precisar.
             </p>
           </div>
           <Link href="/cliente/perfil" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-bold transition hover:border-[#00D4FF] hover:bg-cyan-50 focus:outline-none focus:ring-2 focus:ring-sky-500">
@@ -337,9 +335,23 @@ export default function ClienteDashboard() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">Valor da marcação</p>
                   <p className="mt-1 text-3xl font-black text-[#00D4FF]">{formatarPreco(proximoServico.total_amount)}</p>
                 </div>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-300 lg:mt-2">
-                  <span aria-hidden="true">✓</span> {proximoServico.status === "completed" ? "Concluído" : "Confirmada"}
-                </span>
+                
+                {/* Lógica de Pagamento baseada nas condições do cliente */}
+                <div className="mt-2">
+                  {cliente?.payment_terms === 'monthly_invoice' ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-400/10 px-3 py-1.5 text-xs font-bold text-sky-300">
+                      📅 Faturação Mensal (Fim do Mês)
+                    </span>
+                  ) : proximoServico.payment_status === 'paid' ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-300">
+                      ✓ Pago
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-3 py-1.5 text-xs font-bold text-amber-300">
+                      ⏳ Falta Pagar
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 

@@ -12,6 +12,7 @@ const linksMenu = [
   { href: '/admin/funcionarios', label: 'Equipas & Trabalhadores', short: 'Equipa', icone: '👷' },
   { href: '/admin/servicos', label: 'Agenda & Equipas', short: 'Agenda', icone: '📅' },
   { href: '/admin/loja', label: 'Loja & Stock', short: 'Loja', icone: '🛒' },
+  { href: '/admin/extras', label: 'Catálogo de Extras', short: 'Extras', icone: '✨' }, // 👈 Adicionado aqui
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -32,7 +33,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C] dark:bg-slate-950 dark:text-slate-100 lg:flex">
       <aside className={`fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-white/10 bg-[#0B192C] text-white shadow-xl shadow-slate-950/10 transition-[width] duration-200 lg:flex ${collapsed ? 'w-[76px]' : 'w-64'}`}>
         <Link href="/admin" className={`flex h-20 shrink-0 items-center ${collapsed ? 'justify-center' : 'gap-3 px-6'}`}>
-          <span className="text-2xl font-extrabold text-[#00D4FF]">R&amp;R</span>
+          <span className="text-2xl font-extrabold text-[#00D4FF]">R&R</span>
           {!collapsed && <span className="font-bold text-slate-100">CRM Gestor</span>}
         </Link>
         <nav aria-label="Navegação principal" className="flex-1 space-y-1 px-3 py-4">
@@ -58,8 +59,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className={`flex min-h-dvh min-w-0 flex-1 flex-col transition-[margin] duration-200 ${collapsed ? 'lg:ml-[76px]' : 'lg:ml-64'}`}>
         <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/90 sm:px-6 lg:px-8">
           <div className="min-w-0">
-            <h1 className="truncate text-base font-extrabold tracking-tight sm:text-lg">Painel de Gestão R&amp;R</h1>
-            <p className="hidden text-xs text-slate-500 dark:text-slate-400 sm:block">Sistema Operacional &amp; Comercial · Portugal</p>
+            <h1 className="truncate text-base font-extrabold tracking-tight sm:text-lg">Painel de Gestão R&R</h1>
+            <p className="hidden text-xs text-slate-500 dark:text-slate-400 sm:block">Sistema Operacional & Comercial · Portugal</p>
           </div>
           <button type="button" onClick={handleLogout} className="min-h-11 rounded-xl border border-rose-200 bg-rose-50 px-3.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
             Terminar Sessão
@@ -70,12 +71,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </div>
 
-      <nav aria-label="Navegação principal" className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-6 border-t border-slate-200 bg-white/95 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-12px_36px_rgba(15,23,42,0.10)] backdrop-blur-xl lg:hidden dark:border-white/10 dark:bg-slate-900/95">
+      {/* Navegação Inferior para Telemóveis (Ajustada dinamicamente para 7 colunas) */}
+      <nav aria-label="Navegação principal" className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-7 border-t border-slate-200 bg-white/95 px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_-12px_36px_rgba(15,23,42,0.10)] backdrop-blur-xl lg:hidden dark:border-white/10 dark:bg-slate-900/95">
         {linksMenu.map((item) => {
           const ativo = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(`${item.href}/`));
-          return <Link key={item.href} href={item.href} aria-current={ativo ? 'page' : undefined} className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-semibold transition-colors sm:text-[11px] ${ativo ? 'bg-cyan-50 text-[#007F99] dark:bg-cyan-950/50 dark:text-[#00D4FF]' : 'text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5'}`}>
-            <span aria-hidden="true" className="text-lg leading-5">{item.icone}</span><span className="max-w-full truncate">{item.short}</span>
-          </Link>;
+          return (
+            <Link key={item.href} href={item.href} aria-current={ativo ? 'page' : undefined} className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 text-[9px] font-semibold transition-colors sm:text-[10px] ${ativo ? 'bg-cyan-50 text-[#007F99] dark:bg-cyan-950/50 dark:text-[#00D4FF]' : 'text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5'}`}>
+              <span aria-hidden="true" className="text-base leading-4">{item.icone}</span>
+              <span className="max-w-full truncate">{item.short}</span>
+            </Link>
+          );
         })}
       </nav>
     </div>

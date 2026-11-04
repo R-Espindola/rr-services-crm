@@ -42,16 +42,6 @@ const formatarPreco = (valor: number) =>
     currency: "EUR",
   }).format(valor);
 
-const formatarDataHora = (dateString: string) => {
-  return new Date(dateString).toLocaleString('pt-PT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-
 const inicioDoDia = () => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -72,7 +62,6 @@ const inicioDoMes = () => {
 };
 
 export default function AdminDashboard() {
-  const [showQuickClientModal, setShowQuickClientModal] = useState(false);
   const [metricas, setMetricas] = useState<Metric[]>([]);
   const [metricasLoading, setMetricasLoading] = useState(true);
   const [intervencoesHoje, setIntervencoesHoje] = useState<Order[]>([]);
@@ -337,7 +326,7 @@ export default function AdminDashboard() {
           ) : (
             <div className="space-y-3">
               {intervencoesHoje.map((intervencao) => (
-                  <div key={intervencao.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                <div key={intervencao.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
                   <div>
                     <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${intervencao.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : intervencao.status === 'cancelled' ? 'bg-rose-100 text-rose-800' : intervencao.status === 'in_progress' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
                       {intervencao.status === 'completed' ? 'Concluído' : intervencao.status === 'cancelled' ? 'Cancelado' : intervencao.status === 'in_progress' ? 'Em execução' : 'Pendente'} · {new Date(intervencao.scheduled_date).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}

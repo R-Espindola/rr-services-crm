@@ -91,8 +91,13 @@ export default function QuotesPage() {
   const [viewingQuote, setViewingQuote] = useState<Quote | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // Campos do Formulário de Orçamento
+  // Campos do Formulário de Orçamento (Sem duplicados)
   const [selectedClientId, setSelectedClientId] = useState('')
+  const [isNewClient, setIsNewClient] = useState(false)
+  const [newClientName, setNewClientName] = useState('')
+  const [newClientPhone, setNewClientPhone] = useState('')
+  const [newClientEmail, setNewClientEmail] = useState('')
+  const [newClientAddress, setNewClientAddress] = useState('')
   const [serviceType, setServiceType] = useState('Limpeza Residencial')
   const [typology, setTypology] = useState('T2')
   const [frequency, setFrequency] = useState('semanal')
@@ -146,7 +151,6 @@ export default function QuotesPage() {
       }
     }
     setPricingRulesLoading(false)
-
     setLoading(false)
   }
 
@@ -243,18 +247,44 @@ export default function QuotesPage() {
 
   async function handleCreateQuote(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedClientId) {
-      alert('Por favor, selecione um cliente.')
-      return
-    }
-
     setSubmitting(true)
+
+    let clientIdToUse = selectedClientId
+
+    if (isNewClient || !selectedClientId) {
+      if (!newClientName.trim()) {
+        alert('Por favor, insira o nome do cliente.')
+        setSubmitting(false)
+        return
+      }
+
+      const { data: createdClient, error: clientError } = await supabase
+        .from('clients')
+        .insert([
+          {
+            name: newClientName,
+            phone: newClientPhone || null,
+            email: newClientEmail || null,
+            address: newClientAddress || null,
+          },
+        ])
+        .select('id')
+        .single()
+
+      if (clientError || !createdClient) {
+        alert('Erro ao registar o novo cliente: ' + (clientError?.message || 'Erro desconhecido'))
+        setSubmitting(false)
+        return
+      }
+
+      clientIdToUse = createdClient.id
+    }
 
     const validUntilDate = new Date()
     validUntilDate.setDate(validUntilDate.getDate() + 30)
 
     const payload = {
-      client_id: selectedClientId,
+      client_id: clientIdToUse,
       service_type: serviceType,
       typology: typology || 'T2',
       frequency: frequency || 'Pontual',
@@ -323,6 +353,11 @@ export default function QuotesPage() {
     setShowModal(false)
     setViewingQuote(null)
     setSelectedClientId('')
+    setIsNewClient(false)
+    setNewClientName('')
+    setNewClientPhone('')
+    setNewClientEmail('')
+    setNewClientAddress('')
     setServiceType('Limpeza Residencial')
     setTypology('T2')
     setFrequency('semanal')
@@ -338,7 +373,6 @@ export default function QuotesPage() {
 
   return (
     <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-slate-50 text-[#0B192C] p-4 sm:p-6 md:p-8">
-      {/* Estilos para Impressão limpa do PDF */}
       <style jsx global>{`
         @media print {
           body * {
@@ -525,11 +559,10 @@ export default function QuotesPage() {
         </div>
       </div>
 
-      {/* MODAL / FOLHA FORMAL DE PROPOSTA COMERCIAL E GERADOR PDF (Adaptado para iPhone/Mobile) */}
+      {/* MODAL DE VISUALIZAÇÃO DE PDF */}
       {viewingQuote && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto my-auto">
-            {/* AÇÕES NO TOPO */}
             <div className="flex justify-between items-center mb-6 no-print border-b border-slate-100 pb-4">
               <span className="text-xs font-bold text-slate-400 uppercase">Proposta Comercial Formal</span>
               <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -548,9 +581,7 @@ export default function QuotesPage() {
               </div>
             </div>
 
-            {/* ÁREA FORMAL IMPRESSA (PDF) */}
             <div id="print-area" className="p-4 sm:p-6 bg-white text-[#0B192C] space-y-6 rounded-2xl border border-slate-200">
-              {/* CABEÇALHO DO DOCUMENTO */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-6 gap-4">
                 <div>
                   <div className="flex items-center space-x-2 mb-2">
@@ -567,7 +598,6 @@ export default function QuotesPage() {
                 </div>
               </div>
 
-              {/* DADOS DO CLIENTE */}
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-1">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase block mb-1">Cliente Destinatário</span>
                 <p className="text-sm font-bold text-[#0B192C]">{viewingQuote.clients?.name || 'Cliente'}</p>
@@ -578,7 +608,6 @@ export default function QuotesPage() {
                 )}
               </div>
 
-              {/* DETALHES DO SERVIÇO */}
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse min-w-[500px]">
                   <thead>
@@ -600,7 +629,6 @@ export default function QuotesPage() {
                 </table>
               </div>
 
-              {/* RESUMO DE VALORES */}
               <div className="flex justify-end pt-2">
                 <div className="w-full sm:w-64 space-y-2 text-xs">
                   <div className="flex justify-between text-slate-600">
@@ -624,7 +652,6 @@ export default function QuotesPage() {
                 </div>
               </div>
 
-              {/* CONDIÇÕES E NOTAS */}
               {viewingQuote.notes && (
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
                   <span className="font-bold text-slate-700 block mb-1">Condições da Proposta & Observações:</span>
@@ -632,7 +659,6 @@ export default function QuotesPage() {
                 </div>
               )}
 
-              {/* RODAPÉ DO DOCUMENTO */}
               <div className="border-t border-slate-200 pt-4 text-center text-[10px] text-slate-400">
                 Proposta válida até {viewingQuote.valid_until ? new Date(viewingQuote.valid_until).toLocaleDateString('pt-PT') : '30 dias'}. Obrigado pela confiança na R&R Services!
               </div>
@@ -641,176 +667,228 @@ export default function QuotesPage() {
         </div>
       )}
 
-      {/* MODAL PARA CRIAR NOVO ORÇAMENTO (Adaptado para iPhone/Mobile) */}
+      {/* MODAL PARA CRIAR NOVO ORÇAMENTO (Com alternância Cliente Existente / Avulso) */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto my-auto">
-            <div className="flex justify-between items-center mb-6">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-5 sm:p-8 shadow-2xl border border-slate-100 max-h-[92vh] overflow-y-auto my-auto space-y-6">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-4">
               <div>
-                <h2 className="text-xl sm:text-2xl font-bold text-[#0B192C]">Criar Nova Proposta Comercial</h2>
-                <p className="text-xs text-slate-500 mt-1">Selecione uma tarifa, estime as horas e consulte a margem após custo de mão de obra.</p>
+                <h2 className="text-xl sm:text-2xl font-extrabold text-[#0B192C]">Criar Nova Proposta</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Selecione o cliente, tarifa e verifique os custos internos.</p>
               </div>
-              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-xl font-bold p-2">✕</button>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-700 w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 font-bold text-sm transition">✕</button>
             </div>
 
             <form onSubmit={handleCreateQuote} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Cliente *</label>
-                <select
-                  required
-                  value={selectedClientId}
-                  onChange={(e) => setSelectedClientId(e.target.value)}
-                  className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium"
-                >
-                  <option value="">Selecione um cliente...</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
-                  ))}
-                </select>
+              {/* SELETOR DE CLIENTE EXISTENTE OU NOVO AVULSO */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Cliente Destinatário *</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsNewClient(!isNewClient)}
+                    className="text-xs font-bold text-[#00D4FF] hover:underline"
+                  >
+                    {isNewClient ? '← Selecionar cliente existente' : '+ Criar cliente novo avulso'}
+                  </button>
+                </div>
+
+                {!isNewClient ? (
+                  <select
+                    required={!isNewClient}
+                    value={selectedClientId}
+                    onChange={(e) => setSelectedClientId(e.target.value)}
+                    className="w-full px-4 py-3.5 border border-slate-300 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-[#0B192C]"
+                  >
+                    <option value="">Selecione um cliente registado...</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.phone ? `(${c.phone})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                    <p className="text-[11px] font-bold text-slate-500 uppercase">Registar Novo Cliente Rápido</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        required={isNewClient}
+                        placeholder="Nome do Cliente *"
+                        value={newClientName}
+                        onChange={(e) => setNewClientName(e.target.value)}
+                        className="p-3 border border-slate-300 rounded-xl text-xs bg-white outline-none focus:ring-2 focus:ring-[#00D4FF]"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Telemóvel"
+                        value={newClientPhone}
+                        onChange={(e) => setNewClientPhone(e.target.value)}
+                        className="p-3 border border-slate-300 rounded-xl text-xs bg-white outline-none focus:ring-2 focus:ring-[#00D4FF]"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <input
+                        type="email"
+                        placeholder="E-mail (opcional)"
+                        value={newClientEmail}
+                        onChange={(e) => setNewClientEmail(e.target.value)}
+                        className="p-3 border border-slate-300 rounded-xl text-xs bg-white outline-none focus:ring-2 focus:ring-[#00D4FF]"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Morada do Serviço"
+                        value={newClientAddress}
+                        onChange={(e) => setNewClientAddress(e.target.value)}
+                        className="p-3 border border-slate-300 rounded-xl text-xs bg-white outline-none focus:ring-2 focus:ring-[#00D4FF]"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tipo de Serviço</label>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Tipo de Serviço</label>
                   <select
                     value={serviceType}
-                    disabled={pricingRulesLoading}
-                    onChange={(e) => handlePricingSelection(e.target.value)}
-                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium disabled:opacity-60"
+                    onChange={(e) => handlePricingSelection(e.target.value, frequency, typology)}
+                    className="w-full p-3 border border-slate-300 rounded-xl text-xs font-semibold bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]"
                   >
-                    {SERVICE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                    {SERVICE_TYPES.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tipologia / Item</label>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Tipologia / Item</label>
                   <select
                     value={typology}
-                    disabled={pricingRulesLoading || availableTypologies.length === 0}
-                    onChange={(e) => handlePricingSelection(serviceType, frequency, e.target.value)}
-                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium disabled:opacity-60"
+                    onChange={(e) => {
+                      const nextTypology = e.target.value
+                      setTypology(nextTypology)
+                      const matchedRule = rulesForSelection.find((r) => r.typology === nextTypology)
+                      if (matchedRule) {
+                        setSubtotal(Number(matchedRule.base_price).toFixed(2))
+                        setPriceMatched(true)
+                      }
+                    }}
+                    className="w-full p-3 border border-slate-300 rounded-xl text-xs font-semibold bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]"
                   >
-                    {availableTypologies.length === 0 && <option value="">{pricingRulesLoading ? 'A carregar…' : 'Sem tipologias — preço manual'}</option>}
-                    {availableTypologies.map((item) => <option key={item} value={item}>{item}</option>)}
+                    {availableTypologies.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Frequência</label>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Frequência</label>
                   <select
                     value={frequency}
-                    disabled={pricingRulesLoading || availableFrequencies.length === 0}
                     onChange={(e) => handlePricingSelection(serviceType, e.target.value, typology)}
-                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium disabled:opacity-60"
+                    className="w-full p-3 border border-slate-300 rounded-xl text-xs font-semibold bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]"
                   >
-                    {availableFrequencies.map((item) => <option key={item} value={item}>{frequencyLabel(item)}</option>)}
-                    {availableFrequencies.length === 0 && <option value={frequency}>{frequencyLabel(frequency || 'pontual')}</option>}
+                    {availableFrequencies.map((freq) => (
+                      <option key={freq} value={freq}>{frequencyLabel(freq)}</option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              {pricingRulesLoading ? (
-                <p role="status" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">A carregar tabela de preços…</p>
-              ) : pricingRulesError ? (
-                <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">Não foi possível consultar a tabela de preços. O valor continua editável manualmente.</p>
-              ) : (
-                <p role="status" className={`rounded-xl border px-3 py-2 text-xs ${priceMatched ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-                  {priceMatched && selectedPricingRule ? `Preço base carregado: ${Number(selectedPricingRule.base_price).toFixed(2)} € · hora adicional: ${Number(selectedPricingRule.extra_hourly_rate).toFixed(2)} €. Pode editar o preço manualmente.` : 'Sem regra para esta combinação. Introduza um preço manual.'}
-                </p>
+              {priceMatched && selectedPricingRule && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl font-medium">
+                  ✓ Preço base carregado do tarifário: <strong>{Number(selectedPricingRule.base_price).toFixed(2)} €</strong>. Pode ajustar o valor livremente abaixo.
+                </div>
               )}
 
-              <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-4">
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cálculo Financeiro & Custos Internos</h4>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* BLOCO FINANCEIRO */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4">
+                <p className="text-xs font-extrabold uppercase text-slate-500 tracking-wider">Cálculo Financeiro & Margem</p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Preço Base (€) *</label>
+                    <label className="block text-[11px] font-bold uppercase text-slate-700 mb-1">Preço Base (€) *</label>
                     <input
                       type="number"
                       step="0.01"
                       required
                       value={subtotal}
                       onChange={(e) => setSubtotal(e.target.value)}
-                      placeholder="Ex: 100.00"
-                      className="w-full px-4 py-3.5 sm:py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-base sm:text-sm font-bold"
+                      className="w-full p-3 border border-slate-300 rounded-xl text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-[#00D4FF]"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Desconto (€)</label>
+                    <label className="block text-[11px] font-bold uppercase text-slate-700 mb-1">Desconto Comercial (€)</label>
                     <input
                       type="number"
                       step="0.01"
                       value={discount}
                       onChange={(e) => setDiscount(e.target.value)}
-                      className="w-full px-4 py-3.5 sm:py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-base sm:text-sm font-bold"
+                      className="w-full p-3 border border-slate-300 rounded-xl text-sm font-bold bg-white outline-none focus:ring-2 focus:ring-[#00D4FF]"
                     />
                   </div>
-
                 </div>
 
-                <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs leading-5 text-sky-900">
-                  IVA: regime de isenção — artigo 53.º do CIVA. As novas propostas são emitidas com taxa de 0% e menção de isenção.
-                </p>
+                <div className="p-3 bg-sky-50 text-sky-900 rounded-xl border border-sky-100 text-xs">
+                  ℹ️ Regime de isenção de IVA (Artigo 53.º do CIVA). O valor final reflete isenção total de imposto.
+                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-200 pt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200/60">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Horas Estimadas</label>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Horas Estimadas</label>
                     <input
                       type="number"
-                      min="0"
                       step="0.5"
                       value={estimatedHours}
                       onChange={(e) => setEstimatedHours(e.target.value)}
-                      placeholder="Ex: 3"
-                      className="w-full px-4 py-3.5 sm:py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-base sm:text-sm font-bold"
+                      className="w-full p-2.5 border border-slate-300 rounded-xl text-xs font-bold bg-white"
                     />
-                    <span className="mt-1 block text-[10px] text-slate-500">Custo horário: 9,50 €/h</span>
                   </div>
-
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Custo Interno Estimado</span>
-                    <span className="mt-1 block text-base sm:text-lg font-extrabold text-[#0B192C]">{estimatedCostNum.toFixed(2)} €</span>
-                    <span className="text-[10px] leading-4 text-slate-500">{laborCostNum.toFixed(2)} € mão de obra + {REGIONAL_TRAVEL_COST.toFixed(2)} € deslocação Moita/Montijo/Alcochete + {consumablesCostNum.toFixed(2)} € consumíveis</span>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center gap-3">
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Margem Bruta</span>
-                      <span className={`text-base sm:text-lg font-extrabold ${Number(profitMargin) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{profitMargin}%</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Valor Total</span>
-                      <span className="text-base sm:text-lg font-extrabold text-[#0B192C]">{totalVal.toFixed(2)} €</span>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Custo Interno Est.</label>
+                    <div className="p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700">
+                      {estimatedCostNum.toFixed(2)} €
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Margem Lucro Est.</label>
+                    <div className={`p-2.5 border rounded-xl text-xs font-extrabold ${parseFloat(profitMargin) >= 30 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                      {profitMargin}%
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-3 border-t border-slate-200 text-sm font-black text-[#0B192C]">
+                  <span>Valor Total da Proposta:</span>
+                  <span className="text-lg text-[#00D4FF] bg-[#0B192C] px-3 py-1 rounded-xl">{totalVal.toFixed(2)} €</span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Condições & Observações</label>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Condições & Observações</label>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Inclui produtos e equipamentos..."
-                  className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium h-20"
+                  placeholder="Ex: Inclui limpeza de vidros interiores e equipamentos de cozinha..."
+                  className="w-full p-3 border border-slate-300 rounded-xl text-xs bg-slate-50 h-20 outline-none focus:ring-2 focus:ring-[#00D4FF]"
                 />
               </div>
 
-              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-slate-100">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="w-full sm:w-auto px-5 py-3.5 sm:py-3 text-slate-600 hover:bg-slate-100 rounded-xl font-semibold text-xs sm:text-sm transition text-center"
+                  className="w-full sm:w-auto px-5 py-3 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition text-center"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full sm:w-auto px-7 py-3.5 sm:py-3 bg-[#0B192C] hover:bg-slate-800 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition disabled:opacity-50 cursor-pointer text-center"
+                  className="w-full sm:w-auto px-6 py-3 bg-[#0B192C] text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition disabled:opacity-50 text-center shadow-md cursor-pointer"
                 >
-                  {submitting ? 'A guardar...' : 'Gerar Proposta Comercial'}
+                  {submitting ? 'A criar proposta...' : 'Emitir Proposta Comercial'}
                 </button>
               </div>
             </form>

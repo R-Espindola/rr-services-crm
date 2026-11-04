@@ -10,6 +10,9 @@ export interface Client {
   email: string | null
   address?: string
   auth_user_id?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  payment_terms?: string | null
 }
 
 type AccessCredentials = { clientId: string; phone: string; loginEmail: string; password: string }
@@ -26,12 +29,16 @@ export default function ClientsPage() {
   const [gerandoAcesso, setGerandoAcesso] = useState(false)
   const [accessCredentials, setAccessCredentials] = useState<AccessCredentials | null>(null)
   const [accessFeedback, setAccessFeedback] = useState('')
+  const [geocoding, setGeocoding] = useState(false)
 
   // Campos do formulário de novo cliente
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [address, setAddress] = useState('')
+  const [latitude, setLatitude] = useState('')
+  const [longitude, setLongitude] = useState('')
+  const [paymentTerms, setPaymentTerms] = useState<string>('per_service')
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -53,9 +60,52 @@ export default function ClientsPage() {
     if (data) setClientOrders(data as ClientOrder[])
   }
 
+  // Função para procurar coordenadas automaticamente pela morada
+  async function handleGeocodeAddress() {
+    if (!address || address.trim().length < 5) {
+      alert('Por favor, introduza uma morada válida antes de procurar as coordenadas.')
+      return
+    }
+
+    setGeocoding(true)
+    try {
+      const query = encodeURIComponent(`${address}, Portugal`)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`,
+        {
+          headers: {
+            'Accept-Language': 'pt-PT',
+            'User-Agent': 'RR-Services-CRM'
+          }
+        }
+      )
+
+      const data = await response.json()
+
+      if (data && data.length > 0) {
+        setLatitude(data[0].lat)
+        setLongitude(data[0].lon)
+        alert(`Coordenadas obtidas com sucesso!\nLatitude: ${data[0].lat}\nLongitude: ${data[0].lon}`)
+      } else {
+        alert('Não foi possível encontrar as coordenadas exatas para esta morada. Verifique se o nome da rua e localidade estão corretos.')
+      }
+    } catch (error) {
+      console.error('Erro ao procurar coordenadas:', error)
+      alert('Erro ao ligar ao serviço de mapas.')
+    } finally {
+      setGeocoding(false)
+    }
+  }
+
   async function handleCreateClient(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
+
+    const coordinates = parseCoordinates()
+    if (!coordinates) {
+      setSubmitting(false)
+      return
+    }
 
     const formattedEmail = email || `${phone.replace(/\s+/g, '')}@rrservices.pt`
 
@@ -63,7 +113,9 @@ export default function ClientsPage() {
       name, 
       phone, 
       email: formattedEmail, 
-      address 
+      address,
+      payment_terms: paymentTerms,
+      ...coordinates,
     }])
     
     if (error) {
@@ -74,6 +126,9 @@ export default function ClientsPage() {
       setPhone('')
       setEmail('')
       setAddress('')
+      setLatitude('')
+      setLongitude('')
+      setPaymentTerms('per_service')
       fetchClients()
       alert('Cliente registado com sucesso!')
     }
@@ -86,6 +141,9 @@ export default function ClientsPage() {
     setPhone(client.phone)
     setEmail(client.email ?? '')
     setAddress(client.address || '')
+    setLatitude(client.latitude == null ? '' : String(client.latitude))
+    setLongitude(client.longitude == null ? '' : String(client.longitude))
+    setPaymentTerms(client.payment_terms || 'per_service')
     setViewingClient(null)
   }
 
@@ -93,17 +151,41 @@ export default function ClientsPage() {
     e.preventDefault()
     if (!editingClient) return
     setSubmitting(true)
+    const coordinates = parseCoordinates()
+    if (!coordinates) {
+      setSubmitting(false)
+      return
+    }
     const formattedEmail = email || `${phone.replace(/\s+/g, '')}@rrservices.pt`
-    const { error } = await supabase.from('clients').update({ name, phone, email: formattedEmail, address }).eq('id', editingClient.id)
+    const { error } = await supabase.from('clients').update({ 
+      name, 
+      phone, 
+      email: formattedEmail, 
+      address, 
+      payment_terms: paymentTerms,
+      ...coordinates 
+    }).eq('id', editingClient.id)
+
     if (error) {
       alert('Erro ao atualizar cliente: ' + error.message)
     } else {
-      setClients(current => current.map(client => client.id === editingClient.id ? { ...client, name, phone, email: formattedEmail, address } : client).sort((a, b) => a.name.localeCompare(b.name, 'pt')))
+      setClients(current => current.map(client => client.id === editingClient.id ? { 
+        ...client, 
+        name, 
+        phone, 
+        email: formattedEmail, 
+        address, 
+        payment_terms: paymentTerms,
+        ...coordinates 
+      } : client).sort((a, b) => a.name.localeCompare(b.name, 'pt')))
       setEditingClient(null)
       setName('')
       setPhone('')
       setEmail('')
       setAddress('')
+      setLatitude('')
+      setLongitude('')
+      setPaymentTerms('per_service')
       alert('Cliente atualizado com sucesso!')
     }
     setSubmitting(false)
@@ -116,6 +198,21 @@ export default function ClientsPage() {
     setPhone('')
     setEmail('')
     setAddress('')
+    setLatitude('')
+    setLongitude('')
+    setPaymentTerms('per_service')
+  }
+
+  function parseCoordinates(): { latitude: number | null; longitude: number | null } | null {
+    const latitudeValue = latitude.trim() ? Number(latitude) : null
+    const longitudeValue = longitude.trim() ? Number(longitude) : null
+    if ((latitudeValue === null) !== (longitudeValue === null)
+      || (latitudeValue !== null && (!Number.isFinite(latitudeValue) || latitudeValue < -90 || latitudeValue > 90))
+      || (longitudeValue !== null && (!Number.isFinite(longitudeValue) || longitudeValue < -180 || longitudeValue > 180))) {
+      alert('Indique latitude e longitude válidas em conjunto, ou deixe ambos os campos vazios.')
+      return null
+    }
+    return { latitude: latitudeValue, longitude: longitudeValue }
   }
 
   async function handleGerarAcessoWhatsApp(client: Client) {
@@ -247,24 +344,26 @@ export default function ClientsPage() {
           </article>
         ))}
       </div>
+
       {/* TABELA COM SCROLL HORIZONTAL PARA MOBILE */}
       <div className="hidden overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:block">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[650px]">
+          <table className="w-full text-left text-sm min-w-[750px]">
             <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-bold">
               <tr>
                 <th className="p-4">Nome</th>
                 <th className="p-4">Telemóvel</th>
                 <th className="p-4">E-mail</th>
                 <th className="p-4">Morada</th>
+                <th className="p-4">Condição Pagamento</th>
                 <th className="p-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
               {loading ? (
-                <tr><td colSpan={5} className="text-center py-10 text-slate-400">A carregar clientes...</td></tr>
+                <tr><td colSpan={6} className="text-center py-10 text-slate-400">A carregar clientes...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-10 text-slate-400">Nenhum cliente encontrado.</td></tr>
+                <tr><td colSpan={6} className="text-center py-10 text-slate-400">Nenhum cliente encontrado.</td></tr>
               ) : (
                 filtered.map(c => (
                   <tr key={c.id} className="hover:bg-slate-50 transition">
@@ -272,6 +371,13 @@ export default function ClientsPage() {
                     <td className="p-4 text-slate-700">{c.phone}</td>
                     <td className="p-4 text-slate-500 text-xs">{c.email}</td>
                     <td className="p-4 text-slate-600 text-xs">{c.address || 'Sem morada'}</td>
+                    <td className="p-4 text-xs font-semibold">
+                      {c.payment_terms === 'monthly_invoice' ? (
+                        <span className="bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-1 rounded-xl font-bold">📅 Mensal (Fim do Mês)</span>
+                      ) : (
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-xl font-bold">⚡ Por Serviço</span>
+                      )}
+                    </td>
                     <td className="p-4 text-right">
                       <div className="flex justify-end items-center gap-2">
                       <button
@@ -296,7 +402,7 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* MODAL NOVO CLIENTE (Adaptado para iPhone/Mobile) */}
+      {/* MODAL NOVO CLIENTE / EDITAR CLIENTE */}
       {(showAddModal || editingClient) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl my-auto">
@@ -321,6 +427,40 @@ export default function ClientsPage() {
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Morada Principal</label>
                 <textarea placeholder="Rua, número, andar..." value={address} onChange={e => setAddress(e.target.value)} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 h-20 outline-none focus:ring-2 focus:ring-[#00D4FF]" />
               </div>
+
+              {/* CONDIÇÕES DE PAGAMENTO */}
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Condições de Pagamento</label>
+                <select
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF] font-semibold"
+                >
+                  <option value="per_service">⚡ Pagamento por Limpeza (Imediato / Por Serviço)</option>
+                  <option value="monthly_invoice">📅 Avença / Faturação Mensal (Fim do Mês)</option>
+                </select>
+              </div>
+
+              {/* COORDENADAS COM BOTÃO DE PREENCHIMENTO AUTOMÁTICO */}
+              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                  <legend className="text-xs font-bold uppercase text-slate-700">Coordenadas da morada (Validação GPS)</legend>
+                  <button
+                    type="button"
+                    disabled={geocoding}
+                    onClick={handleGeocodeAddress}
+                    className="bg-[#00D4FF] hover:bg-[#00c2ea] text-[#0B192C] font-extrabold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    {geocoding ? '⌛ A procurar...' : '📍 Obter por Morada'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">Pode preencher automaticamente escrevendo a morada acima e clicando no botão, ou introduzir manualmente.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-xs font-semibold text-slate-600">Latitude<input type="number" min="-90" max="90" step="any" inputMode="decimal" value={latitude} onChange={event => setLatitude(event.target.value)} placeholder="38.6600" className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100" /></label>
+                  <label className="text-xs font-semibold text-slate-600">Longitude<input type="number" min="-180" max="180" step="any" inputMode="decimal" value={longitude} onChange={event => setLongitude(event.target.value)} placeholder="-9.0100" className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100" /></label>
+                </div>
+              </fieldset>
+
               <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
                 <button type="button" onClick={closeClientForm} className="w-full sm:w-auto px-4 py-3 sm:py-2 text-xs font-bold text-slate-600">Cancelar</button>
                 <button type="submit" disabled={submitting} className="w-full sm:w-auto px-5 py-3.5 sm:py-2.5 bg-[#0B192C] text-white rounded-xl text-xs font-bold cursor-pointer shadow">
@@ -332,7 +472,7 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* MODAL FICHA 360° (Adaptado para iPhone/Mobile) */}
+      {/* MODAL FICHA 360° */}
       {viewingClient && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 my-auto max-h-[90vh] overflow-y-auto">
@@ -345,6 +485,8 @@ export default function ClientsPage() {
               <p>📞 <strong>Telemóvel:</strong> {viewingClient.phone}</p>
               <p>✉️ <strong>E-mail:</strong> {viewingClient.email}</p>
               <p>📍 <strong>Morada:</strong> {viewingClient.address || 'Não registada'}</p>
+              <p>💳 <strong>Condição de Pagamento:</strong> {viewingClient.payment_terms === 'monthly_invoice' ? '📅 Faturação Mensal (Fim do Mês)' : '⚡ Por Serviço'}</p>
+              <p>⌖ <strong>Coordenadas:</strong> {viewingClient.latitude != null && viewingClient.longitude != null ? `${viewingClient.latitude}, ${viewingClient.longitude}` : 'Não registadas — ações de tempo GPS indisponíveis'}</p>
             </div>
 
             <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col gap-2">

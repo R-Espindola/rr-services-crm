@@ -18,8 +18,9 @@ export default function ExtrasCatalogPage() {
   const [services, setServices] = useState<ExtraService[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [editingService, setEditingService] = useState<ExtraService | null>(null)
 
-  // Campos do formulário
+  // Campos do formulário de administração
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('')
@@ -45,32 +46,76 @@ export default function ExtrasCatalogPage() {
     setLoading(false)
   }
 
-  async function handleCreateService(e: React.FormEvent) {
+  function handleOpenCreate() {
+    setEditingService(null)
+    setName('')
+    setDescription('')
+    setPrice('')
+    setPriceType('fixed')
+    setCategory('Cozinha')
+    setImageUrl('')
+    setShowModal(true)
+  }
+
+  function handleOpenEdit(item: ExtraService) {
+    setEditingService(item)
+    setName(item.name || '')
+    setDescription(item.description || '')
+    setPrice(String(item.price || ''))
+    setPriceType(item.price_type || 'fixed')
+    setCategory(item.category || 'Cozinha')
+    setImageUrl(item.image_url || '')
+    setShowModal(true)
+  }
+
+  function closeModal() {
+    setShowModal(false)
+    setEditingService(null)
+    setName('')
+    setDescription('')
+    setPrice('')
+    setPriceType('fixed')
+    setCategory('Cozinha')
+    setImageUrl('')
+  }
+
+  async function handleSaveService(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
 
-    const { error } = await supabase.from('services_catalog').insert([
-      {
-        name,
-        description,
-        price: priceType === 'quote' ? 0 : parseFloat(price) || 0,
-        price_type: priceType,
-        category,
-        image_url: imageUrl || null,
-        is_available: true,
-      },
-    ])
-
-    if (error) {
-      alert('Erro ao guardar serviço: ' + error.message)
-    } else {
-      setShowModal(false)
-      setName('')
-      setDescription('')
-      setPrice('')
-      setImageUrl('')
-      fetchCatalog()
+    const payload = {
+      name,
+      description,
+      price: priceType === 'quote' ? 0 : parseFloat(price) || 0,
+      price_type: priceType,
+      category,
+      image_url: imageUrl || null,
+      is_available: editingService ? editingService.is_available : true,
     }
+
+    if (editingService) {
+      const { error } = await supabase
+        .from('services_catalog')
+        .update(payload)
+        .eq('id', editingService.id)
+
+      if (error) {
+        alert('Erro ao atualizar serviço extra: ' + error.message)
+      } else {
+        closeModal()
+        fetchCatalog()
+      }
+    } else {
+      const { error } = await supabase.from('services_catalog').insert([payload])
+
+      if (error) {
+        alert('Erro ao guardar serviço extra: ' + error.message)
+      } else {
+        closeModal()
+        fetchCatalog()
+      }
+    }
+
     setSubmitting(false)
   }
 
@@ -80,8 +125,29 @@ export default function ExtrasCatalogPage() {
       .update({ is_available: !currentStatus })
       .eq('id', id)
 
-    if (!error) {
-      fetchCatalog()
+    if (error) {
+      alert('Erro ao alterar disponibilidade: ' + error.message)
+    } else {
+      setServices(prev =>
+        prev.map(item => (item.id === id ? { ...item, is_available: !currentStatus } : item))
+      )
+    }
+  }
+
+  async function handleDeleteService(id: string, serviceName: string) {
+    if (!confirm(`Tem a certeza de que pretende eliminar o serviço extra "${serviceName}"?`)) {
+      return
+    }
+
+    const { error } = await supabase
+      .from('services_catalog')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      alert('Erro ao eliminar serviço extra: ' + error.message)
+    } else {
+      setServices(prev => prev.filter(item => item.id !== id))
     }
   }
 
@@ -93,18 +159,18 @@ export default function ExtrasCatalogPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C]">Catálogo de Serviços Extra</h1>
           <p className="text-slate-500 text-xs sm:text-sm mt-1">
-            Adicione e gira os serviços adicionais que os clientes podem encomendar (forno, sofás, vidros, etc.).
+            Gira os serviços adicionais disponíveis para orçamento e encomenda dos clientes.
           </p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={handleOpenCreate}
           className="bg-[#0B192C] text-white hover:bg-slate-800 font-bold px-6 py-3.5 sm:py-3 rounded-xl shadow transition cursor-pointer flex items-center justify-center gap-2 text-xs sm:text-sm text-center"
         >
           <span>+ Adicionar Novo Serviço Extra</span>
         </button>
       </div>
 
-      {/* GRELHA DE SERVIÇOS */}
+      {/* GRELHA DE SERVIÇOS EXTRA */}
       {loading ? (
         <div className="text-center py-12 text-slate-400 text-sm">A carregar catálogo...</div>
       ) : services.length === 0 ? (
@@ -115,19 +181,29 @@ export default function ExtrasCatalogPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {services.map((item) => (
-            <div key={item.id} className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between">
+            <div
+              key={item.id}
+              className={`bg-white rounded-3xl border overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between ${
+                !item.is_available ? 'opacity-75 border-slate-300 bg-slate-50/50' : 'border-slate-200'
+              }`}
+            >
               <div className="p-5 sm:p-6">
                 <div className="flex justify-between items-start mb-3 gap-2">
                   <span className="text-[10px] sm:text-xs font-bold uppercase px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                     {item.category}
                   </span>
+
+                  {/* BADGE DE DISPONIBILIDADE */}
                   <button
                     onClick={() => toggleAvailability(item.id, item.is_available)}
-                    className={`text-[11px] px-3 py-1 rounded-full font-bold transition ${
-                      item.is_available ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                    className={`text-[11px] px-3 py-1 rounded-full font-bold transition cursor-pointer flex items-center gap-1 ${
+                      item.is_available
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
                     }`}
+                    title="Clique para alterar a disponibilidade"
                   >
-                    {item.is_available ? 'Disponível' : 'Indisponível'}
+                    <span>{item.is_available ? '🟢 Disponível' : '🔒 Indisponível'}</span>
                   </button>
                 </div>
 
@@ -135,29 +211,62 @@ export default function ExtrasCatalogPage() {
                 <p className="text-slate-600 text-xs sm:text-sm mb-4 line-clamp-2">{item.description || 'Sem descrição.'}</p>
               </div>
 
-              <div className="px-5 sm:px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center text-xs sm:text-sm">
-                <span className="text-slate-500 font-medium">
-                  {item.price_type === 'quote' ? 'Sob Orçamento' : item.price_type === 'per_unit' ? 'Por Unidade' : 'Preço Fixo'}
-                </span>
-                <span className="font-extrabold text-[#0B192C] text-base sm:text-lg">
-                  {item.price_type === 'quote' ? 'Sob Consulta' : `${Number(item.price).toFixed(2)} €`}
-                </span>
+              {/* RODAPÉ DO CARTÃO COM PREÇO E AÇÕES DE ADMIN */}
+              <div className="px-5 sm:px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3">
+                <div className="flex justify-between items-center text-xs sm:text-sm">
+                  <span className="text-slate-500 font-medium">
+                    {item.price_type === 'quote' ? 'Sob Orçamento' : item.price_type === 'per_unit' ? 'Por Unidade' : 'Preço Fixo'}
+                  </span>
+                  <span className="font-extrabold text-[#0B192C] text-base sm:text-lg">
+                    {item.price_type === 'quote' ? 'Sob Consulta' : `${Number(item.price).toFixed(2)} €`}
+                  </span>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200/60">
+                  <button
+                    onClick={() => toggleAvailability(item.id, item.is_available)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border ${
+                      item.is_available
+                        ? 'bg-slate-100 hover:bg-amber-50 text-slate-700 border-slate-300 hover:text-amber-700 hover:border-amber-300'
+                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+                    }`}
+                  >
+                    {item.is_available ? '🔒 Bloquear' : '🔓 Desbloquear'}
+                  </button>
+
+                  <button
+                    onClick={() => handleOpenEdit(item)}
+                    className="bg-white hover:bg-slate-100 text-slate-700 font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-xs transition cursor-pointer"
+                  >
+                    ✏️ Editar
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteService(item.id, item.name)}
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer border border-rose-200"
+                    title="Eliminar Serviço Extra"
+                  >
+                    🗑️ Eliminar
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* MODAL PARA ADICIONAR SERVIÇO EXTRA (Adaptado para iPhone/Mobile) */}
+      {/* MODAL PARA CRIAR / EDITAR SERVIÇO EXTRA */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100 my-auto max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg sm:text-xl font-extrabold text-[#0B192C]">Novo Serviço Extra</h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 font-bold p-2">✕</button>
+              <h2 className="text-lg sm:text-xl font-extrabold text-[#0B192C]">
+                {editingService ? 'Editar Serviço Extra' : 'Novo Serviço Extra'}
+              </h2>
+              <button onClick={closeModal} className="text-slate-400 font-bold p-2 cursor-pointer">✕</button>
             </div>
 
-            <form onSubmit={handleCreateService} className="space-y-4">
+            <form onSubmit={handleSaveService} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Nome do Serviço *</label>
                 <input
@@ -165,7 +274,7 @@ export default function ExtrasCatalogPage() {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Limpeza do Forno"
+                  placeholder="Ex: Limpeza de Forno"
                   className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl text-base sm:text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50"
                 />
               </div>
@@ -218,7 +327,7 @@ export default function ExtrasCatalogPage() {
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Ex: Limpeza interna profunda com remoção de gordura..."
+                  placeholder="Ex: Remoção profunda de gordura incrustada e resíduos queimados..."
                   className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl text-base sm:text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] h-24 bg-slate-50"
                 />
               </div>
@@ -226,17 +335,17 @@ export default function ExtrasCatalogPage() {
               <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="w-full sm:w-auto px-4 py-3 sm:py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition text-center"
+                  onClick={closeModal}
+                  className="w-full sm:w-auto px-4 py-3 sm:py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition text-center cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full sm:w-auto px-6 py-3.5 sm:py-2.5 bg-[#0B192C] text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition disabled:opacity-50 text-center shadow"
+                  className="w-full sm:w-auto px-6 py-3.5 sm:py-2.5 bg-[#0B192C] text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition disabled:opacity-50 text-center shadow cursor-pointer"
                 >
-                  {submitting ? 'A guardar...' : 'Criar Serviço'}
+                  {submitting ? 'A guardar...' : editingService ? 'Guardar Alterações' : 'Criar Serviço'}
                 </button>
               </div>
             </form>

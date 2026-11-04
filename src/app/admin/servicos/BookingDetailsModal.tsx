@@ -2,22 +2,29 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Order as ServiceBooking } from './page'
+import { ClientOption, Order as ServiceBooking } from './page'
+import { AssignableWorker } from './actions'
 
 interface BookingDetailsModalProps {
   booking: ServiceBooking
+  clients?: ClientOption[]
+  workers?: AssignableWorker[]
   onClose: () => void
-  onRefresh: () => void
+  onUpdated: () => void
 }
 
 export default function BookingDetailsModal({
   booking,
+  clients = [],
+  workers = [],
   onClose,
-  onRefresh
+  onUpdated
 }: BookingDetailsModalProps) {
   const [editDate, setEditDate] = useState('')
   const [editTime, setEditTime] = useState('')
   const [editStatus, setEditStatus] = useState<string>('pending')
+  const [editPaymentStatus, setEditPaymentStatus] = useState<string>('pending')
+  const [editWorkerUserId, setEditWorkerUserId] = useState<string>('')
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -29,7 +36,9 @@ export default function BookingDetailsModal({
         setEditDate(dateObj.toISOString().split('T')[0])
         setEditTime(dateObj.toTimeString().substring(0, 5))
       }
-      setEditStatus(booking.status)
+      setEditStatus(booking.status || 'pending')
+      setEditPaymentStatus(booking.payment_status || 'pending')
+      setEditWorkerUserId(booking.worker_user_id || '')
     }
   }, [booking])
 
@@ -44,7 +53,9 @@ export default function BookingDetailsModal({
         .from('orders')
         .update({
           scheduled_date: newDateTime,
-          status: editStatus
+          status: editStatus,
+          payment_status: editPaymentStatus,
+          worker_user_id: editWorkerUserId || null
         })
         .eq('id', booking.id)
 
@@ -54,7 +65,7 @@ export default function BookingDetailsModal({
         return
       }
 
-      await onRefresh()
+      await onUpdated()
       onClose()
     } catch (err: any) {
       setErrorMsg(`Erro inesperado: ${err.message || String(err)}`)
@@ -83,7 +94,7 @@ export default function BookingDetailsModal({
         return
       }
 
-      await onRefresh()
+      await onUpdated()
       onClose()
     } catch (err: any) {
       setErrorMsg(`Erro inesperado: ${err.message || String(err)}`)
@@ -96,7 +107,10 @@ export default function BookingDetailsModal({
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-50 overflow-y-auto">
       <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-100 my-auto max-h-[90vh] overflow-y-auto">
         <header className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
-          <h3 className="text-base sm:text-lg font-bold text-[#0B192C]">Editar / Detalhes do Agendamento</h3>
+          <div>
+            <h3 className="text-base sm:text-lg font-bold text-[#0B192C]">Editar / Detalhes do Agendamento</h3>
+            <p className="text-xs text-slate-500">{booking.clients?.name || 'Cliente Não Associado'}</p>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -115,7 +129,7 @@ export default function BookingDetailsModal({
         <div className="space-y-4 text-sm text-slate-700">
           <div>
             <span className="block text-xs font-semibold text-slate-400 uppercase">Tipo de Serviço</span>
-            <p className="text-base font-bold text-[#0B192C] mt-0.5">{booking.service_type}</p>
+            <p className="text-base font-bold text-[#0B192C] mt-0.5">{booking.service_type} ({Number(booking.total_amount).toFixed(2)} €)</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3.5 border border-slate-200 rounded-2xl">
@@ -146,21 +160,60 @@ export default function BookingDetailsModal({
             </div>
           </div>
 
+          {/* FUNCIONÁRIO ATRIBUÍDO */}
           <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
-            <label htmlFor="modal-edit-status" className="block text-xs font-bold text-[#0B192C] uppercase mb-1.5">
-              Estado Atual
+            <label htmlFor="modal-edit-worker" className="block text-xs font-bold text-[#0B192C] uppercase mb-1.5">
+              Funcionário Atribuído
             </label>
             <select
-              id="modal-edit-status"
-              value={editStatus}
-              onChange={(e) => setEditStatus(e.target.value)}
+              id="modal-edit-worker"
+              value={editWorkerUserId}
+              onChange={(e) => setEditWorkerUserId(e.target.value)}
               className="w-full px-3.5 py-2.5 sm:py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
             >
-              <option value="pending">🟡 Agendado / Pendente</option>
-              <option value="in_progress">🔵 Em Execução</option>
-              <option value="completed">🟢 Concluído</option>
-              <option value="cancelled">🔴 Cancelado</option>
+              <option value="">Sem funcionário atribuído</option>
+              {workers.map((worker) => (
+                <option key={worker.user_id} value={worker.user_id}>
+                  {worker.display_name}
+                </option>
+              ))}
             </select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* ESTADO OPERACIONAL */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+              <label htmlFor="modal-edit-status" className="block text-xs font-bold text-[#0B192C] uppercase mb-1.5">
+                Estado Operacional
+              </label>
+              <select
+                id="modal-edit-status"
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+                className="w-full px-3.5 py-2.5 sm:py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
+              >
+                <option value="pending">🟡 Agendado / Pendente</option>
+                <option value="in_progress">🔵 Em Execução</option>
+                <option value="completed">🟢 Concluído</option>
+                <option value="cancelled">🔴 Cancelado</option>
+              </select>
+            </div>
+
+            {/* ESTADO DE PAGAMENTO */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+              <label htmlFor="modal-edit-payment" className="block text-xs font-bold text-[#0B192C] uppercase mb-1.5">
+                Estado de Pagamento
+              </label>
+              <select
+                id="modal-edit-payment"
+                value={editPaymentStatus}
+                onChange={(e) => setEditPaymentStatus(e.target.value)}
+                className="w-full px-3.5 py-2.5 sm:py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
+              >
+                <option value="pending">⏳ Falta Pagar</option>
+                <option value="paid">✅ Pago</option>
+              </select>
+            </div>
           </div>
 
           <div>
