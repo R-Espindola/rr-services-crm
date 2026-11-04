@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
+import { CLIENT_THEMES, saveClientTheme, useClientTheme } from "../client-theme";
 
 type ProfileForm = {
   name: string;
@@ -21,6 +22,7 @@ const fieldClass = "mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-
 const labelClass = "text-xs font-extrabold uppercase tracking-[0.12em] text-slate-600";
 
 export default function ClientProfilePage() {
+  const activeTheme = useClientTheme();
   const [form, setForm] = useState<ProfileForm>(emptyProfile);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -206,7 +208,22 @@ export default function ClientProfilePage() {
           </div>
           <div aria-live="polite" className="mt-5">{securityError && <p role="alert" className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{securityError}</p>}{securitySuccess && <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{securitySuccess}</p>}</div>
         </section>}
+        {!loading && userId && <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+          <div className="mb-5 border-b border-slate-100 pb-4"><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-700">Personalização</p><h2 className="mt-1 text-xl font-black">Tema de cores</h2><p className="mt-1 text-sm text-slate-500">Escolha a paleta do portal. A alteração é aplicada imediatamente neste dispositivo.</p></div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {CLIENT_THEMES.map((theme) => <ThemeOption key={theme.id} theme={theme} active={theme.id === activeTheme} onSelect={() => saveClientTheme(theme.id)} />)}
+          </div>
+          <p aria-live="polite" className="mt-4 text-xs font-semibold text-slate-500">Tema atual: {CLIENT_THEMES.find((theme) => theme.id === activeTheme)?.name}</p>
+        </section>}
       </div>
     </main>
   );
+}
+
+function ThemeOption({ theme, active, onSelect }: { theme: (typeof CLIENT_THEMES)[number]; active: boolean; onSelect: () => void }) {
+  return <button type="button" aria-pressed={active} onClick={onSelect} className={`flex min-h-24 items-center gap-4 rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${active ? "border-sky-500 bg-sky-50/50 ring-2 ring-sky-500/15" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"}`}>
+    <span className="flex shrink-0 -space-x-2" aria-hidden="true">{theme.colors.map((color) => <span key={color} className="h-8 w-8 rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: color }} />)}</span>
+    <span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-extrabold text-[#0B192C]">{theme.name}{active && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-extrabold uppercase text-emerald-800">Ativo</span>}</span><span className="mt-1 block text-xs leading-5 text-slate-500">{theme.description}</span></span>
+    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${active ? "border-sky-600 bg-sky-600 text-white" : "border-slate-300 text-transparent"}`} aria-hidden="true">✓</span>
+  </button>;
 }

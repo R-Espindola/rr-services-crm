@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import OrdersCalendar from "./OrdersCalendar";
 
 interface Order {
   id: string;
@@ -12,6 +13,7 @@ interface Order {
   total_amount: number;
   status: string;
   notes?: string | null;
+  worker_user_id?: string | null;
   clients?: {
     name: string;
     phone: string;
@@ -19,10 +21,12 @@ interface Order {
     postal_code?: string | null;
     locality?: string | null;
   };
+  worker_profiles?: { display_name: string } | null;
 }
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendente",
+  confirmed: "Confirmada",
   in_progress: "Em Execução",
   completed: "Concluído",
   cancelled: "Cancelado",
@@ -33,6 +37,7 @@ const STATUS_CLASSES: Record<string, string> = {
   cancelled: "bg-rose-50 text-rose-700 border border-rose-200",
   in_progress: "bg-blue-50 text-blue-700 border border-blue-200",
   pending: "bg-amber-50 text-amber-700 border border-amber-200",
+  confirmed: "bg-blue-50 text-blue-700 border border-blue-200",
 };
 
 const formatDate = (dateString: string | null) => {
@@ -62,9 +67,6 @@ export default function PedidosPage() {
   const [filterStatus, setFilterStatus] = useState<string>("todos");
 
   const fetchOrders = async () => {
-    setLoading(true);
-    setError(null);
-
     try {
       const { data: { user }, error: sessionError } = await supabase.auth.getUser();
       if (sessionError || !user) {
@@ -87,7 +89,7 @@ export default function PedidosPage() {
 
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
-        .select("*, clients(name, phone, address, postal_code, locality)")
+        .select("*, clients(name, phone, address, postal_code, locality), worker_profiles(display_name)")
         .eq("client_id", clientData.id)
         .order("scheduled_date", { ascending: false });
 
@@ -106,7 +108,7 @@ export default function PedidosPage() {
   };
 
   useEffect(() => {
-    fetchOrders();
+    void Promise.resolve().then(fetchOrders);
   }, []);
 
   const filteredOrders = orders.filter((o) => {
@@ -128,6 +130,8 @@ export default function PedidosPage() {
             Consulte o estado das suas limpezas, serviços extra e encomendas.
           </p>
         </div>
+
+        {!loading && !error && <OrdersCalendar orders={orders} />}
 
         {loading ? (
           <div className="py-20 text-center text-slate-400 font-medium">

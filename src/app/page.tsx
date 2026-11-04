@@ -2,74 +2,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import QuoteAssistant from './QuoteAssistant';
 
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [orcamentoSubmetido, setOrcamentoSubmetido] = useState(false);
-  const [carregando, setCarregando] = useState(false);
-
-  // Estado do Form do Simulador
-  const [formData, setFormData] = useState({
-    tipoServico: 'residencial_regular',
-    tipologia: 't2',
-    frequencia: 'pontual',
-    servicosAdicionais: [] as string[],
-    nome: '',
-    email: '',
-    telefone: '',
-    observacoes: ''
-  });
-
-  const handleExtraToggle = (item: string) => {
-    setFormData(prev => ({
-      ...prev,
-      servicosAdicionais: prev.servicosAdicionais.includes(item)
-        ? prev.servicosAdicionais.filter(i => i !== item)
-        : [...prev.servicosAdicionais, item]
-    }));
-  };
-
-  const [orcamentoReference, setOrcamentoReference] = useState<string | null>(null);
-  const [orcamentoErro, setOrcamentoErro] = useState<string | null>(null);
-
-  const handleSimularSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCarregando(true);
-    setOrcamentoErro(null);
-
-    try {
-      const response = await fetch('/api/orcamentos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nome: formData.nome,
-          email: formData.email,
-          telefone: formData.telefone,
-          tipoServico: formData.tipoServico,
-          tipologia: formData.tipologia,
-          frequencia: formData.frequencia,
-          servicosAdicionais: formData.servicosAdicionais,
-          observacoes: formData.observacoes,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        setOrcamentoErro(result.error || 'Erro ao submeter orçamento.');
-        setCarregando(false);
-        return;
-      }
-
-      setOrcamentoReference(result.reference);
-      setOrcamentoSubmetido(true);
-    } catch (err) {
-      setOrcamentoErro('Erro de conexão ao submeter o orçamento.');
-      console.error(err);
-    } finally {
-      setCarregando(false);
-    }
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-[#0B192C] font-sans scroll-smooth">
@@ -86,7 +22,7 @@ export default function Home() {
         {/* Links Desktop */}
         <nav className="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-300">
           <a href="#servicos" className="hover:text-[#00D4FF] transition">Serviços</a>
-          <a href="#simulador" className="hover:text-[#00D4FF] transition">Simulador</a>
+          <a href="#simulador" className="hover:text-[#00D4FF] transition">Assistente de Serviços</a>
           <a href="#como-funciona" className="hover:text-[#00D4FF] transition">Como Funciona</a>
           <a href="#faq" className="hover:text-[#00D4FF] transition">FAQ</a>
           <a href="#contactos" className="hover:text-[#00D4FF] transition">Contactos</a>
@@ -122,7 +58,7 @@ export default function Home() {
       {mobileMenuOpen && (
         <div className="md:hidden bg-[#0B192C] border-b border-slate-800 px-6 py-4 flex flex-col space-y-4 text-slate-200 font-medium text-sm">
           <a href="#servicos" onClick={() => setMobileMenuOpen(false)}>Serviços</a>
-          <a href="#simulador" onClick={() => setMobileMenuOpen(false)}>Simulador</a>
+          <a href="#simulador" onClick={() => setMobileMenuOpen(false)}>Assistente de Serviços</a>
           <a href="#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como Funciona</a>
           <a href="#faq" onClick={() => setMobileMenuOpen(false)}>FAQ</a>
           <a href="#contactos" onClick={() => setMobileMenuOpen(false)}>Contactos</a>
@@ -305,198 +241,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 4. SIMULADOR DE ORÇAMENTO */}
-      <section id="simulador" className="py-20 px-6 md:px-12 bg-white border-y border-slate-200">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <span className="text-[#00D4FF] font-bold text-sm uppercase tracking-wider">Simulação Rápida</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-[#0B192C] mt-2">Simular Pedido de Orçamento</h2>
-            <p className="text-slate-600 mt-2">Selecione os detalhes e receba a sua estimativa personalizada.</p>
-          </div>
-
-          {orcamentoSubmetido ? (
-            <div className="bg-emerald-50 border border-emerald-200 p-8 rounded-2xl text-center">
-              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">
-                ✓
-              </div>
-              <h3 className="text-2xl font-bold text-emerald-900 mb-2">Pedido Recebido com Sucesso!</h3>
-              {orcamentoReference && (
-                <p className="text-emerald-700 mb-4">
-                  Referência do orçamento: <span className="font-bold text-[#0B192C]">{orcamentoReference}</span>
-                </p>
-              )}
-              <p className="text-emerald-700 max-w-lg mx-auto mb-6">
-                Obrigado pelo seu pedido. A equipa da R&R Services irá analisar os detalhes e entrar em contacto em breve.
-              </p>
-              <button
-                onClick={() => setOrcamentoSubmetido(false)}
-                className="bg-[#0B192C] text-white px-6 py-2.5 rounded-xl font-semibold text-sm"
-              >
-                Fazer Nova Simulação
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleSimularSubmit} className="bg-slate-50 p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Tipo de Serviço */}
-                <div>
-                  <label className="block text-sm font-semibold text-[#0B192C] mb-2">Tipo de Serviço</label>
-                  <select
-                    value={formData.tipoServico}
-                    onChange={(e) => setFormData({ ...formData, tipoServico: e.target.value })}
-                    className="w-full p-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:border-[#00D4FF]"
-                  >
-                    <option value="residencial_regular">Limpeza Residencial Regular</option>
-                    <option value="profunda">Limpeza Profunda</option>
-                    <option value="pos_obra">Limpeza Pós-Obra</option>
-                    <option value="estofos">Higienização de Sofás / Estofos</option>
-                    <option value="comercial">Espaço Comercial / Escritório</option>
-                  </select>
-                </div>
-
-                {/* Tipologia */}
-                <div>
-                  <label className="block text-sm font-semibold text-[#0B192C] mb-2">Tipologia / Espaço</label>
-                  <select
-                    value={formData.tipologia}
-                    onChange={(e) => setFormData({ ...formData, tipologia: e.target.value })}
-                    className="w-full p-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:border-[#00D4FF]"
-                  >
-                    <option value="t1">T0 / T1</option>
-                    <option value="t2">T2</option>
-                    <option value="t3">T3</option>
-                    <option value="t4_plus">T4 ou superior / Moradia</option>
-                    <option value="comercial">Comercial (por m²)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Frequência */}
-              <div>
-                <label className="block text-sm font-semibold text-[#0B192C] mb-2">Frequência Desejada</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { id: 'pontual', label: 'Pontual' },
-                    { id: 'semanal', label: 'Semanal' },
-                    { id: 'quinzenal', label: 'Quinzenal' },
-                    { id: 'mensal', label: 'Mensal' }
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, frequencia: item.id })}
-                      className={`p-3 text-sm font-semibold rounded-xl border transition ${
-                        formData.frequencia === item.id
-                          ? 'bg-[#0B192C] text-white border-[#0B192C]'
-                          : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Serviços Adicionais */}
-              <div>
-                <label className="block text-sm font-semibold text-[#0B192C] mb-2">Serviços Adicionais (Opcional)</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {['Vidros & Estores', 'Interior do Forno', 'Interior do Frigorífico', 'Limpeza de Varandas', 'Passagem de Roupa'].map((extra) => (
-                    <label
-                      key={extra}
-                      className={`flex items-center space-x-2 p-3 rounded-xl border cursor-pointer text-xs sm:text-sm font-medium transition ${
-                        formData.servicosAdicionais.includes(extra)
-                          ? 'bg-[#00D4FF]/10 border-[#00D4FF] text-[#0B192C]'
-                          : 'bg-white border-slate-300 text-slate-700'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={formData.servicosAdicionais.includes(extra)}
-                        onChange={() => handleExtraToggle(extra)}
-                        className="rounded text-[#00D4FF] focus:ring-0"
-                      />
-                      <span>{extra}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Dados do Cliente */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-slate-200">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="O seu nome"
-                    value={formData.nome}
-                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                    className="w-full p-2.5 rounded-lg border border-slate-300 bg-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">E-mail</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="exemplo@email.com"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full p-2.5 rounded-lg border border-slate-300 bg-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Telefone</label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="912 345 678"
-                    value={formData.telefone}
-                    onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
-                    className="w-full p-2.5 rounded-lg border border-slate-300 bg-white text-sm"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Observações / Detalhes do Espaço</label>
-                <textarea
-                  rows={3}
-                  placeholder="Indique a localização, detalhes dos estofos ou necessidades específicas..."
-                  value={formData.observacoes}
-                  onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
-                  className="w-full p-2.5 rounded-lg border border-slate-300 bg-white text-sm"
-                />
-              </div>
-
-              {/* Nota de Isenção de Confirmacão Automática */}
-              <p className="text-xs text-slate-500 italic">
-                * Os valores calculados são estimativos sujeitos a confirmação após avaliação técnica do espaço.
-              </p>
-
-              {orcamentoErro && (
-                <div className="mb-4 p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-sm font-medium text-center">
-                  {orcamentoErro}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={carregando}
-                className="w-full bg-[#0B192C] text-white font-bold py-4 rounded-xl hover:bg-slate-800 transition shadow-lg flex items-center justify-center space-x-2"
-              >
-                {carregando ? (
-                  <span>A processar pedido...</span>
-                ) : (
-                  <span>Enviar Pedido de Orçamento</span>
-                )}
-              </button>
-            </form>
-          )}
-        </div>
+      {/* 4. ASSISTENTE CONVERSACIONAL DE SERVIÇOS */}
+      <section id="simulador" className="border-y border-slate-200 bg-slate-50 px-4 py-16 sm:px-6 md:px-12 md:py-20">
+        <QuoteAssistant />
       </section>
-
       {/* 5. COMO FUNCIONA */}
       <section id="como-funciona" className="py-20 px-6 md:px-12 bg-slate-50">
         <div className="max-w-5xl mx-auto text-center">
@@ -507,8 +255,8 @@ export default function Home() {
               <div className="w-12 h-12 bg-[#00D4FF] text-[#0B192C] font-extrabold rounded-xl flex items-center justify-center mx-auto mb-6 text-xl">
                 1
               </div>
-              <h3 className="font-bold text-lg mb-2">Pedido ou Simulação</h3>
-              <p className="text-slate-600 text-sm">Escolha o serviço desejado e envie os detalhes do seu espaço através do simulador online.</p>
+              <h3 className="font-bold text-lg mb-2">Recomendação Conversacional</h3>
+              <p className="text-slate-600 text-sm">Responda ao assistente para receber uma recomendação e enviar os detalhes do seu espaço.</p>
             </div>
 
             <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm relative">
@@ -564,8 +312,10 @@ export default function Home() {
             <h4 className="font-bold text-sm text-[#00D4FF] uppercase tracking-wider mb-4">Navegação</h4>
             <ul className="space-y-2 text-sm text-slate-300">
               <li><a href="#servicos" className="hover:text-white transition">Serviços</a></li>
-              <li><a href="#simulador" className="hover:text-white transition">Simulador de Orçamento</a></li>
+              <li><a href="#simulador" className="hover:text-white transition">Assistente de Serviços</a></li>
               <li><Link href="/login?next=%2Fcliente&force=1" className="hover:text-white transition">Área de Clientes</Link></li>
+              <li><Link href="/privacidade" className="hover:text-white transition">Política de Privacidade</Link></li>
+              <li><Link href="/termos" className="hover:text-white transition">Termos e Condições</Link></li>
             </ul>
           </div>
 

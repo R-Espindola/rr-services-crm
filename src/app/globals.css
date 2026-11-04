@@ -67,3 +67,114 @@
     color: #0B192C;
   }
 }
+
+/* Paletas persistidas do Portal do Cliente. O tema padrão mantém as classes originais. */
+#client-portal-root[data-client-theme="atlantico"] {
+  --client-page: #F2F7F7;
+  --client-surface: #FFFFFF;
+  --client-soft: #E8F1F0;
+  --client-primary: #123D4A;
+  --client-accent: #2D8C88;
+  --client-accent-soft: #E5F3F1;
+  --client-text: #17343B;
+  --client-muted: #5D7376;
+  --client-border: #D6E5E3;
+}
+
+#client-portal-root[data-client-theme="minimal"] {
+  --client-page: #F3F4F6;
+  --client-surface: #FFFFFF;
+  --client-soft: #E9EBEF;
+  --client-primary: #323A46;
+  --client-accent: #65758B;
+  --client-accent-soft: #E9EDF2;
+  --client-text: #252C35;
+  --client-muted: #68717E;
+  --client-border: #D9DDE3;
+}
+
+#client-portal-root[data-client-theme="solar"] {
+  --client-page: #FBF6F0;
+  --client-surface: #FFFFFF;
+  --client-soft: #F4EADF;
+  --client-primary: #783F2C;
+  --client-accent: #D58C52;
+  --client-accent-soft: #F9EBDD;
+  --client-text: #422D25;
+  --client-muted: #806B5E;
+  --client-border: #E9DCCE;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) {
+  background-color: var(--client-page) !important;
+  color: var(--client-text) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-[#F3F6FA]"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-[#F5F7FA]"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-slate-50"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-slate-50/70"] {
+  background-color: var(--client-page) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-white"] {
+  background-color: var(--client-surface) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-slate-100"] {
+  background-color: var(--client-soft) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-[#0B192C]"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class*="bg-[#081426]"] {
+  background-color: var(--client-primary) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class*="from-[#0B192C]"] {
+  --tw-gradient-from: var(--client-primary) var(--tw-gradient-from-position) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class*="to-[#173957]"] {
+  --tw-gradient-to: color-mix(in srgb, var(--client-primary), #000 18%) var(--tw-gradient-to-position) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-[#00D4FF]"] {
+  background-color: var(--client-accent) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-[#00D4FF]/10"] {
+  background-color: var(--client-accent-soft) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class*="border-[#00D4FF]"] {
+  border-color: var(--client-accent) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="text-[#0B192C]"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="text-[#081426]"] {
+  color: var(--client-text) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="text-[#00D4FF]"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="text-sky-700"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="text-sky-800"] {
+  color: var(--client-accent) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-sky-50"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="bg-cyan-50"] {
+  background-color: var(--client-accent-soft) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="border-slate-100"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="border-slate-200"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="border-slate-300"] {
+  border-color: var(--client-border) !important;
+}
+
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="text-slate-400"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="text-slate-500"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="text-slate-600"],
+#client-portal-root[data-client-theme]:not([data-client-theme="padrao"]) [class~="text-slate-700"] {
+  color: var(--client-muted) !important;
+}

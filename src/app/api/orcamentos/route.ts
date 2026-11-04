@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { createClient as createSessionClient } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
 
@@ -27,18 +28,23 @@ const json = (body: object, status = 200) => NextResponse.json(body, { status })
 
 export async function POST(request: Request) {
   try {
-    const length = Number(request.headers.get('content-length') ?? 0)
-    if (length > 10_000) return json({ error: 'Pedido demasiado grande.' }, 413)
-    const body: unknown = await request.json()
+    if (!request.headers.get('content-type')?.toLowerCase().includes('application/json')) return json({ error: 'Formato do pedido inválido.' }, 415)
+    const rawBody = await request.text()
+    if (rawBody.length > 10_000) return json({ error: 'Pedido demasiado grande.' }, 413)
+    let body: unknown
+    try { body = JSON.parse(rawBody) } catch { return json({ error: 'Pedido inválido.' }, 400) }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Pedido inválido.' }, 400)
     const input = body as Record<string, unknown>
-    const { nome, email, telefone, tipoServico, tipologia, frequencia, servicosAdicionais, observacoes } = input
+    const { nome, email, telefone, tipoServico, tipoEspaco, tipologia, frequencia, servicosAdicionais, observacoes } = input
 
     if (typeof nome !== 'string' || nome.trim().length < 2 || nome.trim().length > 120) return json({ error: 'Nome inválido.' }, 400)
     if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: 'E-mail inválido.' }, 400)
-    if (typeof telefone !== 'string' || telefone.trim().length < 9 || telefone.length > 30) return json({ error: 'Telefone inválido.' }, 400)
+    const phoneDigits = typeof telefone === 'string' ? telefone.replace(/\D/g, '') : ''
+    if (typeof telefone !== 'string' || telefone.trim().length < 9 || telefone.length > 30 || !/^[+\d\s().-]+$/.test(telefone) || phoneDigits.length < 7 || phoneDigits.length > 15) return json({ error: 'Telefone inválido.' }, 400)
+    if (tipoEspaco !== 'residencial' && tipoEspaco !== 'comercial') return json({ error: 'Tipo de espaço inválido.' }, 400)
     if (typeof tipoServico !== 'string' || typeof tipologia !== 'string' || typeof frequencia !== 'string' ||
         !BASE[tipoServico]?.[tipologia] || FREQUENCY[frequencia] === undefined) return json({ error: 'Dados do serviço inválidos.' }, 400)
+    if (tipoEspaco === 'comercial' && tipologia !== 'comercial' && tipoServico !== 'estofos') return json({ error: 'Indique a dimensão do espaço comercial.' }, 400)
     if (!Array.isArray(servicosAdicionais) || servicosAdicionais.length > Object.keys(EXTRAS).length ||
         !servicosAdicionais.every((item): item is string => typeof item === 'string' && item in EXTRAS) ||
         new Set(servicosAdicionais).size !== servicosAdicionais.length) return json({ error: 'Serviços adicionais inválidos.' }, 400)
@@ -49,16 +55,26 @@ export async function POST(request: Request) {
     const total = Math.round(subtotal * 1.23 * 100) / 100
     const normalizedEmail = email.trim().toLowerCase()
 
-    // Never mutate an existing account based on an unauthenticated email claim.
-    const { data: existing, error: lookupError } = await supabaseAdmin.from('clients')
-      .select('id').eq('email', normalizedEmail).maybeSingle()
-    if (lookupError) return json({ error: 'Não foi possível processar o orçamento.' }, 500)
-    let clientId = existing?.id
+    // Associate a submission with an existing profile only when the session
+    // proves ownership. A guest-supplied email must never select another user.
+    let clientId: string | null = null
+    try {
+      const sessionClient = await createSessionClient()
+      const { data: { user } } = await sessionClient.auth.getUser()
+      if (user) {
+        const { data: ownClient, error: ownClientError } = await supabaseAdmin.from('clients')
+          .select('id').eq('auth_user_id', user.id).maybeSingle()
+        if (ownClientError) return json({ error: 'Não foi possível processar o orçamento.' }, 500)
+        clientId = ownClient?.id ?? null
+      }
+    } catch {
+      // Public leads do not require a signed-in session.
+    }
     if (!clientId) {
       const { data: created, error } = await supabaseAdmin.from('clients').insert({
         name: nome.trim(), email: normalizedEmail, phone: telefone.trim(), address: null, role: 'client',
       }).select('id').single()
-      if (error || !created) return json({ error: 'Não foi possível registar os dados do cliente.' }, 500)
+      if (error || !created) return json({ error: 'Não foi possível registar os dados. Se já tem conta, inicie sessão e tente novamente.' }, 409)
       clientId = created.id
     }
 
@@ -66,7 +82,8 @@ export async function POST(request: Request) {
     const reference = `ORC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${randomInt(100000, 1_000_000)}`
     const validUntil = new Date(now)
     validUntil.setDate(validUntil.getDate() + 30)
-    const safeNotes = `Pedido público via simulador. Extras: ${servicosAdicionais.join(', ') || 'Nenhum'}. Observações: ${typeof observacoes === 'string' ? observacoes.trim() : 'Nenhuma'}.`
+    const spaceLabel = tipoEspaco === 'comercial' ? 'Comercial / escritório' : 'Residencial'
+    const safeNotes = `Pedido via assistente público. Espaço: ${spaceLabel}. Extras: ${servicosAdicionais.join(', ') || 'Nenhum'}. Detalhes: ${typeof observacoes === 'string' ? observacoes.trim() : 'Nenhum'}.`
     const { error } = await supabaseAdmin.from('quotes').insert({
       id: reference, client_id: clientId, service_type: tipoServico, typology: tipologia,
       frequency: frequencia, subtotal, discount: 0, vat_rate: 23, total, estimated_cost: 0,

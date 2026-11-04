@@ -11,6 +11,52 @@ export interface Client {
   address?: string
 }
 
+interface PricingRule {
+  id: string
+  valid_from: string
+  service_type: string
+  typology: string
+  frequency: string
+  base_price: number | string
+  extra_hourly_rate: number | string
+}
+
+const HOURLY_INTERNAL_COST = 9.5
+const REGIONAL_TRAVEL_COST = 3.5
+const SUPPLIES_COST_RATE = 0.05
+const SERVICE_TYPES = [
+  'Limpeza Residencial',
+  'Limpeza Comercial / Escritórios',
+  'Higienização de Estofados',
+  'Limpeza Profunda / Pós-Obra',
+  'Vidros e Caixilharia',
+] as const
+
+const todayLocal = () => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function currentRulesFor(rules: PricingRule[], serviceType: string, frequency?: string) {
+  const latestByKey = new Map<string, PricingRule>()
+  rules
+    .filter((rule) => rule.service_type === serviceType && (!frequency || rule.frequency === frequency) && rule.valid_from <= todayLocal())
+    .sort((a, b) => b.valid_from.localeCompare(a.valid_from))
+    .forEach((rule) => {
+      const key = `${rule.frequency}:${rule.typology}`
+      if (!latestByKey.has(key)) latestByKey.set(key, rule)
+    })
+  return [...latestByKey.values()]
+}
+
+const frequencyLabel = (frequency: string) => {
+  if (frequency === 'pontual') return 'Pontual'
+  if (frequency === 'semanal') return 'Semanal'
+  if (frequency === 'quinzenal') return 'Quinzenal'
+  if (frequency === '3x/semana') return '3 vezes por semana'
+  return frequency.charAt(0).toUpperCase() + frequency.slice(1)
+}
+
 export interface Quote {
   id: string
   client_id: string
@@ -21,7 +67,10 @@ export interface Quote {
   discount: number
   vat_rate: number
   total: number
-  estimated_cost: number
+  estimated_cost: number | null
+  estimated_hours?: number | null
+  regional_travel_cost?: number
+  consumables_cost?: number
   margin_percentage: number
   status: 'pending' | 'sent' | 'approved' | 'rejected'
   valid_until?: string
@@ -34,6 +83,8 @@ export default function QuotesPage() {
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | Quote['status']>('all')
 
   // Modais
   const [showModal, setShowModal] = useState(false)
@@ -44,13 +95,15 @@ export default function QuotesPage() {
   const [selectedClientId, setSelectedClientId] = useState('')
   const [serviceType, setServiceType] = useState('Limpeza Residencial')
   const [typology, setTypology] = useState('T2')
-  const [frequency, setFrequency] = useState('Semanal')
+  const [frequency, setFrequency] = useState('semanal')
   const [subtotal, setSubtotal] = useState('')
   const [discount, setDiscount] = useState('0')
-  const [vatRate, setVatRate] = useState('23')
-  const [estimatedCost, setEstimatedCost] = useState('')
-  const [validDays, setValidDays] = useState('30')
+  const [estimatedHours, setEstimatedHours] = useState('3')
   const [notes, setNotes] = useState('')
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
+  const [pricingRulesLoading, setPricingRulesLoading] = useState(true)
+  const [pricingRulesError, setPricingRulesError] = useState(false)
+  const [priceMatched, setPriceMatched] = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -69,24 +122,124 @@ export default function QuotesPage() {
       .select('id, name, phone, email, address')
       .order('name', { ascending: true })
 
+    const { data: pricingData, error: pricingError } = await supabase
+      .from('pricing_rules')
+      .select('id, valid_from, service_type, typology, frequency, base_price, extra_hourly_rate')
+      .lte('valid_from', todayLocal())
+      .order('valid_from', { ascending: false })
+
     if (quotesData) setQuotes(quotesData as Quote[])
     if (clientsData) setClients(clientsData as Client[])
+    if (pricingError) {
+      setPricingRulesError(true)
+    } else {
+      const rules = (pricingData ?? []) as PricingRule[]
+      setPricingRules(rules)
+      const initialRule = currentRulesFor(rules, 'Limpeza Residencial', 'semanal').find((rule) => rule.typology === 'T2')
+        ?? currentRulesFor(rules, 'Limpeza Residencial', 'semanal')[0]
+      if (initialRule) {
+        setServiceType(initialRule.service_type)
+        setFrequency(initialRule.frequency)
+        setTypology(initialRule.typology)
+        setSubtotal(Number(initialRule.base_price).toFixed(2))
+        setPriceMatched(true)
+      }
+    }
+    setPricingRulesLoading(false)
 
     setLoading(false)
   }
 
   const subtotalNum = parseFloat(subtotal) || 0
   const discountNum = parseFloat(discount) || 0
-  const vatRateNum = parseFloat(vatRate) || 0
-  const estimatedCostNum = parseFloat(estimatedCost) || 0
+  const estimatedHoursNum = Math.max(0, parseFloat(estimatedHours) || 0)
+  const laborCostNum = estimatedHoursNum * HOURLY_INTERNAL_COST
+  const consumablesCostNum = subtotalNum * SUPPLIES_COST_RATE
+  const estimatedCostNum = laborCostNum + REGIONAL_TRAVEL_COST + consumablesCostNum
+  const vatRateNum = 0
 
   const basePriceAfterDiscount = Math.max(0, subtotalNum - discountNum)
   const vatAmount = (basePriceAfterDiscount * vatRateNum) / 100
   const totalVal = basePriceAfterDiscount + vatAmount
 
-  const profitMargin = basePriceAfterDiscount > 0
-    ? (((basePriceAfterDiscount - estimatedCostNum) / basePriceAfterDiscount) * 100).toFixed(1)
+  const profitMargin = totalVal > 0
+    ? (((totalVal - estimatedCostNum) / totalVal) * 100).toFixed(1)
     : '0.0'
+
+  const rulesForService = currentRulesFor(pricingRules, serviceType)
+  const availableFrequencies = [...new Set(rulesForService.map((rule) => rule.frequency))]
+  const rulesForSelection = currentRulesFor(pricingRules, serviceType, frequency)
+  const availableTypologies = [...new Set(rulesForSelection.map((rule) => rule.typology))]
+  const selectedPricingRule = rulesForSelection.find((rule) => rule.typology === typology)
+
+  function handlePricingSelection(nextService: string, nextFrequency?: string, nextTypology?: string) {
+    const rules = currentRulesFor(pricingRules, nextService)
+    const selectedFrequency = nextFrequency && rules.some((rule) => rule.frequency === nextFrequency)
+      ? nextFrequency
+      : rules[0]?.frequency ?? nextFrequency ?? ''
+    const choices = currentRulesFor(pricingRules, nextService, selectedFrequency)
+    const selectedRule = choices.find((rule) => rule.typology === nextTypology) ?? choices[0]
+
+    setServiceType(nextService)
+    setFrequency(selectedFrequency)
+    setTypology(selectedRule?.typology ?? '')
+    setPriceMatched(Boolean(selectedRule))
+    setSubtotal(selectedRule ? Number(selectedRule.base_price).toFixed(2) : '')
+  }
+
+  const currentMonthQuotes = quotes.filter((quote) => {
+    const createdAt = new Date(quote.created_at)
+    const now = new Date()
+    return createdAt.getFullYear() === now.getFullYear() && createdAt.getMonth() === now.getMonth()
+  })
+  const quotesWithDecision = quotes.filter((quote) => quote.status === 'approved' || quote.status === 'rejected')
+  const approvalRate = quotesWithDecision.length
+    ? (quotesWithDecision.filter((quote) => quote.status === 'approved').length / quotesWithDecision.length) * 100
+    : 0
+  const totalBudgetedThisMonth = currentMonthQuotes.reduce((sum, quote) => sum + Number(quote.total || 0), 0)
+  const approvedReadyTotal = quotes.filter((quote) => quote.status === 'approved').reduce((sum, quote) => sum + Number(quote.total || 0), 0)
+  const filteredQuotes = quotes.filter((quote) => {
+    const matchesName = (quote.clients?.name ?? '').toLowerCase().includes(searchTerm.trim().toLowerCase())
+    const matchesStatus = statusFilter === 'all' || quote.status === statusFilter
+    return matchesName && matchesStatus
+  })
+
+  function quoteGrossMargin(quote: Quote) {
+    const finalPrice = Number(quote.total || 0)
+    const isOperationalCostBreakdownStored = quote.estimated_hours != null
+      && quote.regional_travel_cost != null
+      && quote.consumables_cost != null
+    const internalCost = isOperationalCostBreakdownStored
+      ? Number(quote.estimated_cost || 0)
+      : Number(quote.estimated_cost || 0) + REGIONAL_TRAVEL_COST + Number(quote.subtotal || 0) * SUPPLIES_COST_RATE
+    return finalPrice > 0 ? ((finalPrice - internalCost) / finalPrice) * 100 : 0
+  }
+
+  function whatsappUrl(quote: Quote) {
+    const digits = (quote.clients?.phone ?? '').replace(/\D/g, '')
+    if (!digits) return null
+    const internationalPhone = digits.startsWith('00') ? digits.slice(2) : digits.startsWith('351') ? digits : `351${digits.replace(/^0+/, '')}`
+    const message = [
+      `Olá ${quote.clients?.name || 'Cliente'}, segue o resumo da sua proposta R&R Services:`,
+      `Serviço: ${quote.service_type}${quote.typology ? ` (${quote.typology})` : ''}`,
+      `Frequência: ${frequencyLabel(quote.frequency || 'pontual')}`,
+      `Valor total: ${Number(quote.total || 0).toFixed(2)} €`,
+      Number(quote.vat_rate || 0) === 0 ? 'IVA — regime de isenção, artigo 53.º do CIVA.' : `IVA incluído à taxa registada de ${quote.vat_rate}%.`,
+      quote.valid_until ? `Proposta válida até: ${new Date(`${quote.valid_until}T12:00:00`).toLocaleDateString('pt-PT')}.` : '',
+      'Para aceitar ou esclarecer algum detalhe, responda a esta mensagem. Obrigado pela preferência!',
+    ].filter(Boolean).join('\n')
+    return `https://wa.me/${internationalPhone}?text=${encodeURIComponent(message)}`
+  }
+
+  function openCreateModal() {
+    const currentRule = rulesForSelection.find((rule) => rule.typology === typology) ?? rulesForSelection[0]
+    if (currentRule) {
+      setTypology(currentRule.typology)
+      setSubtotal(Number(currentRule.base_price).toFixed(2))
+      setPriceMatched(true)
+    }
+    setShowModal(true)
+  }
 
   async function handleCreateQuote(e: React.FormEvent) {
     e.preventDefault()
@@ -98,7 +251,7 @@ export default function QuotesPage() {
     setSubmitting(true)
 
     const validUntilDate = new Date()
-    validUntilDate.setDate(validUntilDate.getDate() + (parseInt(validDays) || 30))
+    validUntilDate.setDate(validUntilDate.getDate() + 30)
 
     const payload = {
       client_id: selectedClientId,
@@ -110,6 +263,9 @@ export default function QuotesPage() {
       vat_rate: vatRateNum,
       total: totalVal,
       estimated_cost: estimatedCostNum,
+      estimated_hours: estimatedHoursNum,
+      regional_travel_cost: REGIONAL_TRAVEL_COST,
+      consumables_cost: consumablesCostNum,
       margin_percentage: parseFloat(profitMargin) || 0,
       status: 'pending',
       valid_until: validUntilDate.toISOString().split('T')[0],
@@ -141,6 +297,7 @@ export default function QuotesPage() {
   }
 
   async function handleConvertToOrder(quote: Quote) {
+    if (quote.status !== 'approved') return
     if (!confirm(`Deseja agendar o serviço para o cliente com base neste orçamento aprovado?`)) {
       return
     }
@@ -168,11 +325,10 @@ export default function QuotesPage() {
     setSelectedClientId('')
     setServiceType('Limpeza Residencial')
     setTypology('T2')
-    setFrequency('Semanal')
+    setFrequency('semanal')
     setSubtotal('')
     setDiscount('0')
-    setVatRate('23')
-    setEstimatedCost('')
+    setEstimatedHours('3')
     setNotes('')
   }
 
@@ -210,16 +366,58 @@ export default function QuotesPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C]">Propostas & Orçamentos</h1>
           <p className="text-slate-500 text-xs sm:text-sm mt-1">
-            Gere propostas comerciais com cálculo de margem interna, IVA e converta em agendamentos diretos.
+            Gere propostas, acompanhe a margem após custos internos e converta propostas aprovadas em marcações.
           </p>
         </div>
 
         <button
-          onClick={() => setShowModal(true)}
+          onClick={openCreateModal}
           className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-6 py-3.5 sm:py-3 rounded-xl shadow transition cursor-pointer flex items-center justify-center gap-2 border border-slate-700 text-xs sm:text-sm text-center"
         >
           <span>+ Criar Novo Orçamento</span>
         </button>
+      </div>
+
+      {/* MÉTRICAS COMERCIAIS */}
+      <section aria-label="Métricas de orçamentos" className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Orçamentado · Mês Atual</p>
+          <p className="mt-2 text-2xl font-extrabold text-[#0B192C]">{totalBudgetedThisMonth.toFixed(2)} €</p>
+          <p className="mt-1 text-xs text-slate-500">{currentMonthQuotes.length} propostas criadas este mês</p>
+        </article>
+        <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Taxa de Aprovação</p>
+          <p className="mt-2 text-2xl font-extrabold text-emerald-700">{approvalRate.toFixed(1)}%</p>
+          <p className="mt-1 text-xs text-slate-500">Aprovados ÷ propostas aprovadas ou recusadas</p>
+        </article>
+        <article className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5 shadow-sm sm:col-span-2 xl:col-span-1">
+          <p className="text-xs font-bold uppercase tracking-wider text-cyan-900">Valor Aprovado Pronto a Agendar</p>
+          <p className="mt-2 text-2xl font-extrabold text-[#0B192C]">{approvedReadyTotal.toFixed(2)} €</p>
+          <p className="mt-1 text-xs text-cyan-900">Soma das propostas aprovadas ainda disponíveis</p>
+        </article>
+      </section>
+
+      {/* PESQUISA E FILTRO */}
+      <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center">
+        <label className="min-w-0 flex-1">
+          <span className="sr-only">Pesquisar pelo nome do cliente</span>
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Pesquisar pelo nome do cliente…"
+            className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-500/10"
+          />
+        </label>
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+          <span>Estado</span>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="min-h-11 min-w-40 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100">
+            <option value="all">Todos</option>
+            <option value="pending">Pendente</option>
+            <option value="approved">Aprovado</option>
+            <option value="rejected">Recusado</option>
+          </select>
+        </label>
       </div>
 
       {/* TABELA DE ORÇAMENTOS */}
@@ -231,7 +429,7 @@ export default function QuotesPage() {
                 <th className="py-4 px-6">Cliente</th>
                 <th className="py-4 px-6">Tipo & Tipologia</th>
                 <th className="py-4 px-6">Frequência</th>
-                <th className="py-4 px-6">Valor Total (c/ IVA)</th>
+                <th className="py-4 px-6">Valor Total</th>
                 <th className="py-4 px-6">Margem Lucro</th>
                 <th className="py-4 px-6">Estado</th>
                 <th className="py-4 px-6 text-right">Ações</th>
@@ -242,14 +440,14 @@ export default function QuotesPage() {
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-slate-400">A carregar propostas comerciais...</td>
                 </tr>
-              ) : quotes.length === 0 ? (
+              ) : filteredQuotes.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-16 text-slate-400">
-                    Nenhum orçamento criado. Clique no botão acima para criar a primeira proposta.
+                    {quotes.length === 0 ? 'Nenhum orçamento criado. Clique no botão acima para criar a primeira proposta.' : 'Nenhum orçamento corresponde à pesquisa e ao estado selecionados.'}
                   </td>
                 </tr>
               ) : (
-                quotes.map((q) => (
+                filteredQuotes.map((q) => (
                   <tr key={q.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-4 px-6 font-bold text-[#0B192C]">
                       {q.clients?.name || 'Cliente'}
@@ -259,12 +457,12 @@ export default function QuotesPage() {
                       {q.service_type}
                       <span className="text-xs font-bold text-[#00D4FF] block">{q.typology}</span>
                     </td>
-                    <td className="py-4 px-6 text-slate-600 text-xs font-medium">{q.frequency}</td>
+                    <td className="py-4 px-6 text-slate-600 text-xs font-medium">{frequencyLabel(q.frequency || 'pontual')}</td>
                     <td className="py-4 px-6 font-extrabold text-[#0B192C]">
                       {Number(q.total || 0).toFixed(2)} €
                     </td>
-                    <td className="py-4 px-6 font-bold text-emerald-600 text-xs">
-                      {q.margin_percentage || 0}%
+                    <td className={`py-4 px-6 font-bold text-xs ${quoteGrossMargin(q) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {quoteGrossMargin(q).toFixed(1)}%
                     </td>
                     <td className="py-4 px-6">
                       <select
@@ -294,9 +492,26 @@ export default function QuotesPage() {
                         >
                           👁️ Ver PDF
                         </button>
+                        {whatsappUrl(q) ? (
+                          <a
+                            href={whatsappUrl(q)!}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Enviar proposta de ${q.clients?.name || 'cliente'} pelo WhatsApp`}
+                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold px-3.5 py-2 rounded-xl border border-emerald-200 text-xs transition cursor-pointer flex items-center gap-1"
+                          >
+                            📲 Enviar WhatsApp
+                          </a>
+                        ) : (
+                          <button type="button" disabled title="Este cliente não tem telemóvel registado" className="bg-slate-100 text-slate-400 font-bold px-3.5 py-2 rounded-xl border border-slate-200 text-xs opacity-60 cursor-not-allowed">
+                            📲 Enviar WhatsApp
+                          </button>
+                        )}
                         <button
                           onClick={() => handleConvertToOrder(q)}
-                          className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer"
+                          disabled={q.status !== 'approved'}
+                          title={q.status !== 'approved' ? 'A proposta precisa de estar aprovada para ser agendada' : 'Agendar serviço aprovado'}
+                          className="bg-[#0B192C] hover:bg-slate-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#0B192C]"
                         >
                           ⚡ Agendar
                         </button>
@@ -378,7 +593,7 @@ export default function QuotesPage() {
                     <tr>
                       <td className="py-4 px-4 font-bold text-[#0B192C]">{viewingQuote.service_type}</td>
                       <td className="py-4 px-4 font-medium text-slate-700">{viewingQuote.typology || 'T2'}</td>
-                      <td className="py-4 px-4 font-medium text-slate-700">{viewingQuote.frequency || 'Pontual'}</td>
+                      <td className="py-4 px-4 font-medium text-slate-700">{frequencyLabel(viewingQuote.frequency || 'pontual')}</td>
                       <td className="py-4 px-4 font-bold text-[#0B192C] text-right">{Number(viewingQuote.subtotal || 0).toFixed(2)} €</td>
                     </tr>
                   </tbody>
@@ -398,11 +613,9 @@ export default function QuotesPage() {
                       <span>{Number(viewingQuote.discount).toFixed(2)} €</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-slate-600">
-                    <span>IVA ({viewingQuote.vat_rate || 23}%):</span>
-                    <span className="font-bold">
-                      {(((Number(viewingQuote.subtotal || 0) - Number(viewingQuote.discount || 0)) * (viewingQuote.vat_rate || 23)) / 100).toFixed(2)} €
-                    </span>
+                  <div className="flex justify-between gap-3 text-slate-600">
+                    <span>{Number(viewingQuote.vat_rate || 0) === 0 ? 'IVA — regime de isenção (art.º 53.º do CIVA):' : `IVA (${viewingQuote.vat_rate}% — registo histórico):`}</span>
+                    <span className="shrink-0 font-bold">{Number(viewingQuote.vat_rate || 0) === 0 ? '0,00 €' : (((Number(viewingQuote.subtotal || 0) - Number(viewingQuote.discount || 0)) * Number(viewingQuote.vat_rate || 0)) / 100).toFixed(2) + ' €'}</span>
                   </div>
                   <div className="flex justify-between text-sm font-black text-[#0B192C] border-t border-slate-300 pt-2">
                     <span>Total da Proposta:</span>
@@ -435,7 +648,7 @@ export default function QuotesPage() {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-[#0B192C]">Criar Nova Proposta Comercial</h2>
-                <p className="text-xs text-slate-500 mt-1">Defina os valores do serviço e analise a margem de lucro interna.</p>
+                <p className="text-xs text-slate-500 mt-1">Selecione uma tarifa, estime as horas e consulte a margem após custo de mão de obra.</p>
               </div>
               <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 text-xl font-bold p-2">✕</button>
             </div>
@@ -456,51 +669,60 @@ export default function QuotesPage() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tipo de Serviço</label>
                   <select
                     value={serviceType}
-                    onChange={(e) => setServiceType(e.target.value)}
-                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium"
+                    disabled={pricingRulesLoading}
+                    onChange={(e) => handlePricingSelection(e.target.value)}
+                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium disabled:opacity-60"
                   >
-                    <option value="Limpeza Residencial">Limpeza Residencial</option>
-                    <option value="Limpeza Profunda">Limpeza Profunda</option>
-                    <option value="Pós-Obra">Pós-Obra</option>
-                    <option value="Escritórios & Comercial">Escritórios & Comercial</option>
+                    {SERVICE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tipologia</label>
-                  <input
-                    type="text"
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tipologia / Item</label>
+                  <select
                     value={typology}
-                    onChange={(e) => setTypology(e.target.value)}
-                    placeholder="Ex: T2, T3"
-                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium"
-                  />
+                    disabled={pricingRulesLoading || availableTypologies.length === 0}
+                    onChange={(e) => handlePricingSelection(serviceType, frequency, e.target.value)}
+                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium disabled:opacity-60"
+                  >
+                    {availableTypologies.length === 0 && <option value="">{pricingRulesLoading ? 'A carregar…' : 'Sem tipologias — preço manual'}</option>}
+                    {availableTypologies.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Frequência</label>
                   <select
                     value={frequency}
-                    onChange={(e) => setFrequency(e.target.value)}
-                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium"
+                    disabled={pricingRulesLoading || availableFrequencies.length === 0}
+                    onChange={(e) => handlePricingSelection(serviceType, e.target.value, typology)}
+                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 text-base sm:text-sm font-medium disabled:opacity-60"
                   >
-                    <option value="Pontual">Pontual</option>
-                    <option value="Semanal">Semanal</option>
-                    <option value="Quinzenal">Quinzenal</option>
-                    <option value="Mensal">Mensal</option>
+                    {availableFrequencies.map((item) => <option key={item} value={item}>{frequencyLabel(item)}</option>)}
+                    {availableFrequencies.length === 0 && <option value={frequency}>{frequencyLabel(frequency || 'pontual')}</option>}
                   </select>
                 </div>
               </div>
 
+              {pricingRulesLoading ? (
+                <p role="status" className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">A carregar tabela de preços…</p>
+              ) : pricingRulesError ? (
+                <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">Não foi possível consultar a tabela de preços. O valor continua editável manualmente.</p>
+              ) : (
+                <p role="status" className={`rounded-xl border px-3 py-2 text-xs ${priceMatched ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                  {priceMatched && selectedPricingRule ? `Preço base carregado: ${Number(selectedPricingRule.base_price).toFixed(2)} € · hora adicional: ${Number(selectedPricingRule.extra_hourly_rate).toFixed(2)} €. Pode editar o preço manualmente.` : 'Sem regra para esta combinação. Introduza um preço manual.'}
+                </p>
+              )}
+
               <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-4">
                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Cálculo Financeiro & Custos Internos</h4>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Preço Base (€) *</label>
                     <input
@@ -525,37 +747,40 @@ export default function QuotesPage() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Taxa IVA (%)</label>
-                    <input
-                      type="number"
-                      value={vatRate}
-                      onChange={(e) => setVatRate(e.target.value)}
-                      className="w-full px-4 py-3.5 sm:py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-base sm:text-sm font-bold"
-                    />
-                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-200 pt-3">
+                <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs leading-5 text-sky-900">
+                  IVA: regime de isenção — artigo 53.º do CIVA. As novas propostas são emitidas com taxa de 0% e menção de isenção.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-200 pt-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Custo Estimado Interno (€)</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Horas Estimadas</label>
                     <input
                       type="number"
-                      step="0.01"
-                      value={estimatedCost}
-                      onChange={(e) => setEstimatedCost(e.target.value)}
-                      placeholder="Ex: 40.00"
+                      min="0"
+                      step="0.5"
+                      value={estimatedHours}
+                      onChange={(e) => setEstimatedHours(e.target.value)}
+                      placeholder="Ex: 3"
                       className="w-full px-4 py-3.5 sm:py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-[#00D4FF] bg-white text-base sm:text-sm font-bold"
                     />
+                    <span className="mt-1 block text-[10px] text-slate-500">Custo horário: 9,50 €/h</span>
                   </div>
 
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center">
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Custo Interno Estimado</span>
+                    <span className="mt-1 block text-base sm:text-lg font-extrabold text-[#0B192C]">{estimatedCostNum.toFixed(2)} €</span>
+                    <span className="text-[10px] leading-4 text-slate-500">{laborCostNum.toFixed(2)} € mão de obra + {REGIONAL_TRAVEL_COST.toFixed(2)} € deslocação Moita/Montijo/Alcochete + {consumablesCostNum.toFixed(2)} € consumíveis</span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center gap-3">
                     <div>
                       <span className="text-[10px] font-bold text-slate-400 uppercase block">Margem Bruta</span>
-                      <span className="text-base sm:text-lg font-extrabold text-emerald-600">{profitMargin}%</span>
+                      <span className={`text-base sm:text-lg font-extrabold ${Number(profitMargin) >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{profitMargin}%</span>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Total c/ IVA</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Valor Total</span>
                       <span className="text-base sm:text-lg font-extrabold text-[#0B192C]">{totalVal.toFixed(2)} €</span>
                     </div>
                   </div>

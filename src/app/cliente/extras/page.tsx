@@ -1,34 +1,48 @@
 'use client'
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
+type ExtraService = {
+  id: string;
+  name: string;
+  category: string;
+  description: string | null;
+  price: number | null;
+  price_type: 'fixed' | 'per_unit' | 'quote';
+  is_available: boolean;
+};
+
 export default function ClientExtrasPage() {
-  const [services, setServices] = useState<any[]>([])
+  const [services, setServices] = useState<ExtraService[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedService, setSelectedService] = useState<any | null>(null)
+  const [selectedService, setSelectedService] = useState<ExtraService | null>(null)
   const [notes, setNotes] = useState('')
+  const requestedDate = useSyncExternalStore(subscribeToLocation, getRequestedDate, () => '')
   const [submitting, setSubmitting] = useState(false)
+  const [catalogError, setCatalogError] = useState('')
   const router = useRouter()
 
-  useEffect(() => {
-    fetchAvailableExtras()
+  const fetchAvailableExtras = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('services_catalog')
+        .select('*')
+        .eq('is_available', true)
+        .order('category', { ascending: true })
+      if (error) throw error
+      setServices((data ?? []) as ExtraService[])
+    } catch {
+      setCatalogError('Não foi possível carregar os serviços extra. Tente novamente mais tarde.')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  async function fetchAvailableExtras() {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from('services_catalog')
-      .select('*')
-      .eq('is_available', true)
-      .order('category', { ascending: true })
-
-    if (data) {
-      setServices(data)
-    }
-    setLoading(false)
-  }
+  useEffect(() => {
+    void Promise.resolve().then(fetchAvailableExtras)
+  }, [fetchAvailableExtras])
 
   async function handleRequestExtra(e: React.FormEvent) {
     e.preventDefault()
@@ -41,9 +55,10 @@ export default function ClientExtrasPage() {
       router.push('/login')
       return
     }
+    const requestNotes = [requestedDate ? `Data pretendida para o serviço: ${requestedDate}` : '', notes.trim()].filter(Boolean).join('\n')
     const { error } = await supabase.rpc('solicitar_extra_seguro', {
       p_service_id: selectedService.id,
-      p_notes: notes || null,
+      p_notes: requestNotes || null,
     })
 
     if (error) {
@@ -72,6 +87,8 @@ export default function ClientExtrasPage() {
 
         {loading ? (
           <div className="text-center py-12 text-slate-400">A carregar catálogo...</div>
+        ) : catalogError ? (
+          <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center text-sm font-semibold text-rose-800">{catalogError}</div>
         ) : services.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm">
             <p className="text-slate-600 font-medium text-lg">Ainda não existem serviços extra disponíveis no catálogo.</p>
@@ -120,6 +137,8 @@ export default function ClientExtrasPage() {
               </div>
             </div>
 
+            {requestedDate && <p className="mb-4 rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-900">Pedido associado à data pretendida: {new Date(`${requestedDate}T12:00:00`).toLocaleDateString('pt-PT')}</p>}
+
             <form onSubmit={handleRequestExtra} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Observações ou Detalhes</label>
@@ -153,4 +172,14 @@ export default function ClientExtrasPage() {
       )}
     </main>
   )
+}
+
+function getRequestedDate() {
+  const value = new URLSearchParams(window.location.search).get('data') ?? ''
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ''
+}
+
+function subscribeToLocation(callback: () => void) {
+  window.addEventListener('popstate', callback)
+  return () => window.removeEventListener('popstate', callback)
 }

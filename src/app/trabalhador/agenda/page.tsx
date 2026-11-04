@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-type ChecklistItem = { id: string; label: string; done: boolean }
+type ChecklistItem = { id: string; category?: string; label: string; done: boolean }
 type ClientInfo = { name: string | null; address: string | null; phone: string | null }
 type Order = {
   id: string
@@ -27,13 +27,61 @@ type Order = {
 }
 type Photo = { path: string; url: string }
 
+const CHECKLIST_CATEGORIES = [
+  'Cozinha',
+  'Casas de Banho',
+  'Pavimentos',
+  'Geral / Superfícies',
+  'Acabamentos / Detalhes',
+  'Extras / Outros',
+] as const
+
 const defaultTasks = (service: string): ChecklistItem[] => {
-  const tasks = /vidro|janela/i.test(service)
-    ? ['Limpar vidros e caixilhos', 'Remover marcas e pó', 'Confirmar acabamento']
-    : /obra|profunda/i.test(service)
-      ? ['Remover pó de todas as superfícies', 'Higienizar cozinha e casas de banho', 'Limpar pavimentos', 'Verificar detalhes e acabamento']
-      : ['Aspirar e lavar pavimentos', 'Higienizar casa de banho', 'Limpar cozinha e superfícies', 'Remover pó e limpar áreas de contacto']
-  return tasks.map((label, index) => ({ id: `task-${index + 1}`, label, done: false }))
+  const isVidros = /vidro|janela/i.test(service)
+  const isObraOuProfunda = /obra|profunda/i.test(service)
+
+  const tasks: { category: string; label: string }[] = isVidros
+    ? [
+        { category: 'Vidros e Caixilhos', label: 'Limpar vidros interiores e exteriores' },
+        { category: 'Vidros e Caixilhos', label: 'Limpar caixilharia e calhas' },
+        { category: 'Vidros e Caixilhos', label: 'Remover marcas de dedos e dedadas' },
+        { category: 'Acabamentos / Detalhes', label: 'Secar e abrilhantar superfícies de vidro' },
+      ]
+    : isObraOuProfunda
+      ? [
+          { category: 'Cozinha', label: 'Desengordurar exterior de armários e bancadas' },
+          { category: 'Cozinha', label: 'Higienizar lava-louça e torneiras' },
+          { category: 'Cozinha', label: 'Limpar exaustor e placa de fogão' },
+          { category: 'Casas de Banho', label: 'Desinfetar e lavar sanita e bidet' },
+          { category: 'Casas de Banho', label: 'Limpar e descalcificar poliban / banheira' },
+          { category: 'Casas de Banho', label: 'Limpar espelhos e torneiras' },
+          { category: 'Pavimentos', label: 'Aspirar pó de obras / sujidade acumulada' },
+          { category: 'Pavimentos', label: 'Lavar pavimentos com produto adequado' },
+          { category: 'Pavimentos', label: 'Limpar rodapés e cantos' },
+          { category: 'Geral / Superfícies', label: 'Remover pó de todas as superfícies e portas' },
+          { category: 'Geral / Superfícies', label: 'Limpar interruptores, tomadas e pegas' },
+          { category: 'Geral / Superfícies', label: 'Esvaziar e higienizar caixotes do lixo' },
+          { category: 'Acabamentos / Detalhes', label: 'Verificar manchas em vidros e espelhos' },
+          { category: 'Acabamentos / Detalhes', label: 'Inspecionar detalhes finais e aromatizar' },
+        ]
+      : [
+          { category: 'Cozinha', label: 'Limpar bancadas e lava-louça' },
+          { category: 'Cozinha', label: 'Limpar exterior de eletrodomésticos' },
+          { category: 'Cozinha', label: 'Arrumar louça e limpar mesa' },
+          { category: 'Casas de Banho', label: 'Higienizar e desinfetar sanita' },
+          { category: 'Casas de Banho', label: 'Limpar lavatório, torneiras e espelho' },
+          { category: 'Casas de Banho', label: 'Lavar poliban / banheira' },
+          { category: 'Pavimentos', label: 'Aspirar todos os pavimentos e tapetes' },
+          { category: 'Pavimentos', label: 'Lavar pavimentos em toda a casa' },
+          { category: 'Pavimentos', label: 'Mover pequenos móveis para aspirar por baixo' },
+          { category: 'Geral / Superfícies', label: 'Limpar pó de móveis, prateleiras e objetos' },
+          { category: 'Geral / Superfícies', label: 'Desinfetar interruptores e puxadores de portas' },
+          { category: 'Geral / Superfícies', label: 'Mudar sacos do lixo e colocar limpos' },
+          { category: 'Acabamentos / Detalhes', label: 'Conferir organização geral das divisões' },
+          { category: 'Acabamentos / Detalhes', label: 'Revisão final de cantos e detalhes' },
+        ]
+
+  return tasks.map((item, index) => ({ id: `task-${index + 1}`, category: item.category, label: item.label, done: false }))
 }
 
 const getClient = (client: Order['clients']): ClientInfo => Array.isArray(client) ? client[0] ?? { name: null, address: null, phone: null } : client ?? { name: null, address: null, phone: null }
@@ -45,9 +93,7 @@ const elapsedSeconds = (order: Order, now: number) => {
   const paused = order.paused_duration_seconds || 0
   return Math.max(0, Math.floor((end - new Date(order.started_at).getTime()) / 1000) - paused)
 }
-const durationClock = (seconds: number) => {
-  return `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
-}
+const durationClock = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 const formatDuration = (minutes: number) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 const completedMinutes = (order: Order) => order.duration_minutes ?? (order.started_at && order.completed_at
   ? Math.max(0, Math.floor((new Date(order.completed_at).getTime() - new Date(order.started_at).getTime() - (order.paused_duration_seconds || 0) * 1000) / 60_000))
@@ -71,7 +117,7 @@ export default function WorkerAgendaPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [clock, setClock] = useState(0)
   const [agendaView, setAgendaView] = useState<'today' | 'week' | 'month'>('today')
-  const [newTaskDraft, setNewTaskDraft] = useState<Record<string, string>>({})
+  const [newTaskDraft, setNewTaskDraft] = useState<Record<string, { label: string; category: string }>>({})
 
   const loadAgenda = useCallback(async () => {
     setLoading(true)
@@ -91,7 +137,6 @@ export default function WorkerAgendaPage() {
       }
       setWorkerName(worker.display_name)
 
-      // Filter calendar periods in the device's local timezone (normally Europe/Lisbon).
       const start = new Date()
       start.setHours(0, 0, 0, 0)
       const end = new Date(start)
@@ -144,6 +189,7 @@ export default function WorkerAgendaPage() {
     const request = window.setTimeout(() => { void loadAgenda() }, 0)
     return () => window.clearTimeout(request)
   }, [loadAgenda])
+
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 1000)
     return () => window.clearInterval(timer)
@@ -198,15 +244,21 @@ export default function WorkerAgendaPage() {
 
   async function addChecklistTask(event: React.FormEvent<HTMLFormElement>, order: Order) {
     event.preventDefault()
-    const label = (newTaskDraft[order.id] ?? '').trim()
+    const draft = newTaskDraft[order.id] || { label: '', category: 'Cozinha' }
+    const label = draft.label.trim()
+    const category = draft.category || 'Extras / Outros'
     const checklist = order.worker_checklist ?? []
+
     if (!label) return
     if (checklist.length >= 50) {
       setError('O checklist atingiu o limite de 50 tarefas.')
       return
     }
-    const saved = await saveChecklist(order, [...checklist, { id: crypto.randomUUID(), label, done: false }])
-    if (saved) setNewTaskDraft((current) => ({ ...current, [order.id]: '' }))
+
+    const saved = await saveChecklist(order, [...checklist, { id: crypto.randomUUID(), category, label, done: false }])
+    if (saved) {
+      setNewTaskDraft((current) => ({ ...current, [order.id]: { label: '', category: draft.category } }))
+    }
   }
 
   async function uploadPhotos(order: Order, kind: 'before' | 'after', files: FileList | null) {
@@ -291,22 +343,120 @@ export default function WorkerAgendaPage() {
             const canStartNow = clock >= startAvailableAt
             const phone = client.phone ? whatsappNumber(client.phone) : ''
             const completedTasks = checklist.filter((task) => task.done)
-            const report = [`Olá ${client.name || ''},`, 'A R&R Services agradece a sua preferência.', `A sua limpeza (${order.service_type}) foi concluída com sucesso!`, '', 'Tarefas executadas:', ...(completedTasks.length ? completedTasks.map((task) => `✅ ${task.label}`) : ['Nenhuma tarefa foi marcada na checklist.']), '', `Início: ${order.started_at ? formatTime(order.started_at) : '—'}`, `Término: ${order.completed_at ? formatTime(order.completed_at) : '—'}`, `Duração: ${formatDuration(completedMinutes(order))}`].join('\n')
+            const report = [`Olá ${client.name || ''},`, 'A R&R Services agradece a sua preferência.', `A sua limpeza (${order.service_type}) foi concluída com sucesso!`, '', 'Tarefas executadas:', ...(completedTasks.length ? completedTasks.map((task) => `✅ [${task.category || 'Geral'}] ${task.label}`) : ['Nenhuma tarefa foi marcada na checklist.']), '', `Início: ${order.started_at ? formatTime(order.started_at) : '—'}`, `Término: ${order.completed_at ? formatTime(order.completed_at) : '—'}`, `Duração: ${formatDuration(completedMinutes(order))}`].join('\n')
             const whatsappUrl = phone && order.status === 'completed' ? `https://wa.me/${phone}?text=${encodeURIComponent(report)}` : null
             const status = order.status === 'pending' ? { label: 'Não iniciada', style: 'bg-amber-50 text-amber-700 ring-amber-200' } : order.status === 'in_progress' && order.paused_at ? { label: 'Pausada', style: 'bg-violet-50 text-violet-700 ring-violet-200' } : order.status === 'in_progress' ? { label: 'Em andamento', style: 'bg-sky-50 text-sky-700 ring-sky-200' } : order.status === 'completed' ? { label: 'Concluída', style: 'bg-emerald-50 text-emerald-700 ring-emerald-200' } : { label: 'Cancelada', style: 'bg-rose-50 text-rose-700 ring-rose-200' }
             const canEdit = order.status === 'pending' || order.status === 'in_progress'
+
+            const groupedTasks = checklist.reduce<Record<string, ChecklistItem[]>>((acc, task) => {
+              const cat = task.category || 'Outras Tarefas'
+              if (!acc[cat]) acc[cat] = []
+              acc[cat].push(task)
+              return acc
+            }, {})
+
+            const currentDraft = newTaskDraft[order.id] || { label: '', category: 'Cozinha' }
+
             return <article key={order.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/[0.03] sm:rounded-3xl">
               <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6"><div className="flex min-w-0 gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#0B192C] text-lg text-[#00D4FF]">⌂</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-extrabold">{client.name || 'Cliente'}</h3><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset ${status.style}`}>{status.label}</span></div><p className="mt-1 text-sm font-semibold text-slate-600">{order.service_type}</p><p className="mt-2 text-xs font-medium capitalize text-slate-400">{formatTime(order.scheduled_date)} · {formatDate(order.scheduled_date)}</p></div></div>
                 {order.status === 'pending' && <div className="w-full sm:w-auto"><button type="button" disabled={busy !== null || !canStartNow} onClick={() => void updateOrder(order, 'start')} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0B192C] px-5 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-55 sm:w-auto"><span aria-hidden="true">▶</span>{busy === `start-${order.id}` ? 'A iniciar...' : canStartNow ? 'Iniciar limpeza' : `Disponível a partir das ${formatTime(new Date(startAvailableAt).toISOString())}`}</button>{!canStartNow && <p className="mt-1.5 text-center text-[11px] font-medium text-slate-500">O início fica disponível 5 minutos antes.</p>}</div>}
                 {order.status === 'in_progress' && <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-48"><span className="text-center font-mono text-sm font-bold tabular-nums text-sky-700">{durationClock(elapsedSeconds(order, clock))}</span><div className="grid grid-cols-2 gap-2"><button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, order.paused_at ? 'resume' : 'pause')} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-extrabold text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60">{busy === `${order.paused_at ? 'resume' : 'pause'}-${order.id}` ? 'A guardar...' : order.paused_at ? '▶ Retomar' : 'Ⅱ Pausar'}</button><button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'finish')} className="inline-flex min-h-12 items-center justify-center gap-1 rounded-xl bg-emerald-600 px-2 text-[11px] font-extrabold text-white transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60">{busy === `finish-${order.id}` ? 'A concluir...' : '✓ Concluir limpeza'}</button></div></div>}
               </div>
-              <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
-                <div className="space-y-5"><section><h4 className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-400">Morada do serviço</h4><p className="mt-2 text-sm font-semibold leading-6 text-[#0B192C]">{address || 'Morada não registada'}</p>{address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-extrabold text-slate-700 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-800"><span aria-hidden="true">➤</span>Abrir no GPS</a>}</section>
+              
+              <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,1.2fr)]">
+                <div className="space-y-5">
+                  <section>
+                    <h4 className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-400">Morada do serviço</h4>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-[#0B192C]">{address || 'Morada não registada'}</p>
+                    
+                    {address && (
+                      <div className="mt-3">
+                        <p className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-slate-400">Navegar com:</p>
+                        <div className="flex flex-wrap gap-2">
+                          <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-extrabold text-slate-700 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-800 shadow-2xs">
+                            <span aria-hidden="true">🗺️</span> Google Maps
+                          </a>
+                          <a href={`https://waze.com/ul?q=${encodeURIComponent(address)}&navigate=yes`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-extrabold text-slate-700 transition hover:border-cyan-400 hover:bg-cyan-50 hover:text-cyan-900 shadow-2xs">
+                            <span aria-hidden="true">🚙</span> Waze
+                          </a>
+                          <a href={`https://maps.apple.com/?q=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-extrabold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100 shadow-2xs">
+                            <span aria-hidden="true">🍏</span> Apple Maps
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+
                   {client.phone && <a href={`tel:${client.phone}`} className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-sky-700 hover:text-sky-900">☎ {client.phone}</a>}
                   {order.notes && <section className="rounded-xl bg-slate-50 p-4"><h4 className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-400">Notas do serviço</h4><p className="mt-2 text-sm leading-6 text-slate-700">{order.notes}</p></section>}
                 </div>
-                <section><div className="flex items-center justify-between gap-3"><h4 className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-400">Checklist</h4><span className="text-xs font-bold text-slate-500">{checklist.filter((task) => task.done).length}/{checklist.length}</span></div><div className="mt-3 space-y-2">{checklist.map((task) => <label key={task.id} className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition ${task.done ? 'border-emerald-100 bg-emerald-50/70' : 'border-slate-100 bg-slate-50 hover:border-slate-200'} ${!canEdit || busy === `checklist-${order.id}` ? 'cursor-not-allowed opacity-70' : ''}`}><input type="checkbox" checked={task.done} disabled={!canEdit || busy === `checklist-${order.id}`} onChange={() => void toggleTask(order, task.id)} className="h-5 w-5 rounded border-slate-300 accent-sky-600 focus:ring-2 focus:ring-sky-500"/><span className={`text-sm font-medium ${task.done ? 'text-emerald-800 line-through decoration-emerald-400' : 'text-slate-700'}`}>{task.label}</span></label>)}</div>{canEdit && checklist.length < 50 && <form onSubmit={(event) => void addChecklistTask(event, order)} className="mt-3 flex flex-col gap-2 sm:flex-row"><input value={newTaskDraft[order.id] ?? ''} onChange={(event) => setNewTaskDraft((current) => ({ ...current, [order.id]: event.target.value }))} maxLength={240} placeholder="Ex.: limpar interior do frigorífico" aria-label="Novo item da checklist" className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"/><button type="submit" disabled={busy !== null || !(newTaskDraft[order.id] ?? '').trim()} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-xs font-extrabold text-slate-700 transition hover:border-sky-300 hover:text-sky-700 disabled:opacity-50">+ Adicionar item</button></form>}</section>
+
+                {/* CHECKLIST DETALHADA POR CATEGORIA */}
+                <section>
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-400">Checklist de Tarefas</h4>
+                    <span className="text-xs font-bold text-slate-500">{checklist.filter((t) => t.done).length}/{checklist.length} concluídas</span>
+                  </div>
+                  
+                  <div className="mt-3 space-y-4 max-h-[460px] overflow-y-auto pr-1">
+                    {Object.entries(groupedTasks).map(([category, tasks]) => (
+                      <div key={category} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 shadow-2xs">
+                        <h5 className="text-[11px] font-black uppercase tracking-wider text-sky-800 mb-3 flex items-center justify-between border-b border-slate-200/60 pb-2">
+                          <span>{category}</span>
+                          <span className="text-[10px] font-extrabold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">{tasks.filter(t => t.done).length}/{tasks.length}</span>
+                        </h5>
+                        <div className="space-y-2">
+                          {tasks.map((task) => (
+                            <label key={task.id} className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 transition ${task.done ? 'border-emerald-200 bg-emerald-50/80 shadow-2xs' : 'border-slate-200 bg-white hover:border-slate-300'} ${!canEdit || busy === `checklist-${order.id}` ? 'cursor-not-allowed opacity-70' : ''}`}>
+                              <input type="checkbox" checked={task.done} disabled={!canEdit || busy === `checklist-${order.id}`} onChange={() => void toggleTask(order, task.id)} className="h-4 w-4 rounded border-slate-300 accent-sky-600 focus:ring-2 focus:ring-sky-500"/>
+                              <span className={`text-xs font-medium leading-relaxed ${task.done ? 'text-emerald-900 line-through decoration-emerald-500 font-semibold' : 'text-slate-700'}`}>{task.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {canEdit && checklist.length < 50 && (
+                    <form onSubmit={(event) => void addChecklistTask(event, order)} className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 space-y-2">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">+ Adicionar item personalizado</p>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <select
+                          value={currentDraft.category}
+                          onChange={(e) => setNewTaskDraft((current) => ({
+                            ...current,
+                            [order.id]: { label: currentDraft.label, category: e.target.value }
+                          }))}
+                          className="min-h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold outline-none text-slate-700 focus:border-sky-400"
+                        >
+                          {CHECKLIST_CATEGORIES.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                        <input
+                          value={currentDraft.label}
+                          onChange={(e) => setNewTaskDraft((current) => ({
+                            ...current,
+                            [order.id]: { label: e.target.value, category: currentDraft.category }
+                          }))}
+                          maxLength={240}
+                          placeholder="Ex.: Limpar espelho pequeno do corredor"
+                          aria-label="Novo item da checklist"
+                          className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                        />
+                        <button
+                          type="submit"
+                          disabled={busy !== null || !currentDraft.label.trim()}
+                          className="min-h-11 rounded-xl bg-[#0B192C] px-4 text-xs font-extrabold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                        >
+                          Adicionar
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </section>
               </div>
+
               <div className="grid gap-4 border-t border-slate-100 bg-slate-50/70 p-5 sm:grid-cols-2 sm:p-6">
                 {(['before', 'after'] as const).map((kind) => {
                   const canUpload = kind === 'before' ? canEdit : order.status === 'in_progress' || order.status === 'completed'
