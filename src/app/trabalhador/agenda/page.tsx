@@ -157,21 +157,7 @@ export default function WorkerAgendaPage() {
     setError('')
     try {
       const rpcName = { start: 'worker_start_cleaning', pause: 'worker_pause_cleaning', resume: 'worker_resume_cleaning', finish: 'worker_finish_cleaning' }[action]
-      let position: GeolocationPosition
-      try {
-        position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          if (!navigator.geolocation) return reject(new Error('GPS indisponível'))
-          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })
-        })
-      } catch {
-        throw new Error('GPS indisponível ou sem autorização')
-      }
-      const { error: rpcError } = await supabase.rpc(rpcName, {
-        p_order_id: order.id,
-        p_latitude: position.coords.latitude,
-        p_longitude: position.coords.longitude,
-        p_accuracy_m: position.coords.accuracy,
-      })
+      const { error: rpcError } = await supabase.rpc(rpcName, { p_order_id: order.id })
       if (rpcError) throw rpcError
       setNotice({ start: 'Limpeza iniciada. Bom trabalho!', pause: 'Cronómetro pausado.', resume: 'Cronómetro retomado.', finish: 'Limpeza concluída com sucesso.' }[action])
       await loadAgenda()
@@ -181,10 +167,6 @@ export default function WorkerAgendaPage() {
         ? 'Conclua todas as tarefas da checklist antes de finalizar a limpeza.'
         : rpcMessage.includes('start window opens')
           ? 'Só poderá iniciar a limpeza a partir de 5 minutos antes do horário agendado.'
-          : rpcMessage.includes('GPS is outside')
-            ? 'A localização está fora do raio permitido ou o sinal GPS está impreciso. Confirme que está junto ao endereço do serviço e tente novamente.'
-        : rpcMessage.includes('GPS') || rpcMessage.includes('geolocation') || rpcMessage.includes('User denied')
-          ? 'Não foi possível validar a localização. Ative a localização no dispositivo e confirme que está junto ao endereço do serviço.'
           : 'Não foi possível atualizar o estado da limpeza. Atualize a página e tente novamente.')
     } finally {
       setBusy(null)
