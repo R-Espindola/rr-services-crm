@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -27,19 +26,7 @@ type Order = {
   paused_at: string | null
   paused_duration_seconds: number
   worker_checklist: ChecklistItem[] | null
-  before_photos: string[] | null
-  after_photos: string[] | null
   clients: ClientInfo | ClientInfo[] | null
-}
-type Photo = { path: string; url: string }
-type LocationCheck = {
-  state: 'checking' | 'ready' | 'outside' | 'denied' | 'unavailable' | 'missing'
-  latitude?: number
-  longitude?: number
-  accuracy?: number
-  distance?: number
-  checkedAt?: number
-  message: string
 }
 
 const defaultTasks = (service: string): ChecklistItem[] => {
@@ -48,7 +35,7 @@ const defaultTasks = (service: string): ChecklistItem[] => {
     { category: 'Cozinha (Base)', label: 'Limpar bancadas, mesa e lava-louça', done: false },
     { category: 'Cozinha (Base)', label: 'Limpar exterior de eletrodomésticos', done: false },
     { category: 'Cozinha (Base)', label: 'Esvaziar lixo e trocar saco', done: false },
-    
+
     { category: 'Casas de Banho (Base)', label: 'Desinfetar sanita e bidé', done: false },
     { category: 'Casas de Banho (Base)', label: 'Lavar poliban/banheira e lavatório', done: false },
     { category: 'Casas de Banho (Base)', label: 'Limpar espelhos e torneiras', done: false },
@@ -74,53 +61,32 @@ const getClient = (client: Order['clients']): ClientInfo => Array.isArray(client
 
 const formatTime = (value: string) => new Date(value).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
 const formatDate = (value: string) => new Date(value).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' })
-const elapsedSeconds = (order: Order, now: number) => {
-  if (!order.started_at) return 0
-  const end = order.paused_at ? new Date(order.paused_at).getTime() : now
-  const paused = order.paused_duration_seconds || 0
-  return Math.max(0, Math.floor((end - new Date(order.started_at).getTime()) / 1000) - paused)
-}
-const durationClock = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
-const formatDuration = (minutes: number) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`
-const distanceInMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const toRadians = (degrees: number) => degrees * (Math.PI / 180)
-  const dLat = toRadians(lat2 - lat1)
-  const dLon = toRadians(lon2 - lon1)
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2
-  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-const completedMinutes = (order: Order) => order.duration_minutes ?? (order.started_at && order.completed_at
-  ? Math.max(0, Math.floor((new Date(order.completed_at).getTime() - new Date(order.started_at).getTime() - (order.paused_duration_seconds || 0) * 1000) / 60_000))
-  : 0)
-const whatsappNumber = (value: string) => {
-  let digits = value.replace(/\D/g, '')
-  if (digits.startsWith('00')) digits = digits.slice(2)
-  if (!digits.startsWith('351')) digits = `351${digits.replace(/^0/, '')}`
-  return digits
-}
 
 export default function WorkerAgendaPage() {
   const router = useRouter()
   const [workerName, setWorkerName] = useState('')
-  const [userId, setUserId] = useState('')
   const [orders, setOrders] = useState<Order[]>([])
-  const [photos, setPhotos] = useState<Record<string, { before: Photo[]; after: Photo[] }>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  const [clock, setClock] = useState(0)
+  const [clock, setClock] = useState(Date.now())
   const [agendaView, setAgendaView] = useState<'today' | 'week' | 'month'>('today')
-  const [newTaskDraft, setNewTaskDraft] = useState<Record<string, { label: string; category: string }>>({})
-  const [locationChecks, setLocationChecks] = useState<Record<string, LocationCheck>>({})
-  
+  const [periodOffset, setPeriodOffset] = useState(0)
+  const [copiedAddressId, setCopiedAddressId] = useState<string | null>(null)
+
   // Estado para controlar se a checklist está aberta (inicia vazio, logo fica oculto por defeito)
   const [checklistOpen, setChecklistOpen] = useState<Record<string, boolean>>({})
 
   const toggleChecklistOpen = (orderId: string) => {
     setChecklistOpen(prev => ({ ...prev, [orderId]: !prev[orderId] }))
   }
+
+  // Atualizar o relógio a cada segundo para verificar em tempo real se já atingiu a janela dos 10 min
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   const loadAgenda = useCallback(async () => {
     setLoading(true)
@@ -131,7 +97,6 @@ export default function WorkerAgendaPage() {
         setError('A sua sessão terminou. Inicie sessão novamente para consultar a agenda.')
         return
       }
-      setUserId(user.id)
       const { data: worker, error: workerError } = await supabase.from('worker_profiles')
         .select('display_name, active').eq('user_id', user.id).maybeSingle()
       if (workerError || !worker?.active) {
@@ -142,20 +107,19 @@ export default function WorkerAgendaPage() {
 
       const start = new Date()
       start.setHours(0, 0, 0, 0)
+      if (agendaView === 'week') start.setDate(start.getDate() - ((start.getDay() + 6) % 7) + periodOffset * 7)
+      else if (agendaView === 'month') { start.setDate(1); start.setMonth(start.getMonth() + periodOffset) }
+      else start.setDate(start.getDate() + periodOffset)
       const end = new Date(start)
       if (agendaView === 'today') {
         end.setDate(end.getDate() + 1)
       } else if (agendaView === 'week') {
-        start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
-        end.setTime(start.getTime())
         end.setDate(end.getDate() + 7)
       } else {
-        start.setDate(1)
-        end.setTime(start.getTime())
         end.setMonth(end.getMonth() + 1)
       }
       const { data, error: ordersError } = await supabase.from('orders')
-        .select('id, client_id, service_type, scheduled_date, status, notes, started_at, completed_at, duration_minutes, paused_at, paused_duration_seconds, worker_checklist, before_photos, after_photos, clients(name, address, phone, latitude, longitude)')
+        .select('id, client_id, service_type, scheduled_date, status, notes, started_at, completed_at, duration_minutes, paused_at, paused_duration_seconds, worker_checklist, clients(name, address, phone, latitude, longitude)')
         .eq('worker_user_id', user.id)
         .gte('scheduled_date', start.toISOString())
         .lt('scheduled_date', end.toISOString())
@@ -168,35 +132,17 @@ export default function WorkerAgendaPage() {
       }))
       setOrders(rows)
 
-      const signed: typeof photos = {}
-      await Promise.all(rows.map(async (order) => {
-        signed[order.id] = { before: [], after: [] }
-        for (const kind of ['before', 'after'] as const) {
-          const paths = order[kind === 'before' ? 'before_photos' : 'after_photos'] ?? []
-          const urls = await Promise.all(paths.map(async (path) => {
-            const { data: signedUrl } = await supabase.storage.from('worker-cleaning-photos').createSignedUrl(path, 600)
-            return signedUrl?.signedUrl ? { path, url: signedUrl.signedUrl } : null
-          }))
-          signed[order.id][kind] = urls.filter((photo): photo is Photo => photo !== null)
-        }
-      }))
-      setPhotos(signed)
     } catch {
       setError('Não foi possível carregar a agenda. Tente novamente dentro de momentos.')
     } finally {
       setLoading(false)
     }
-  }, [agendaView])
+  }, [agendaView, periodOffset])
 
   useEffect(() => {
     const request = window.setTimeout(() => { void loadAgenda() }, 0)
     return () => window.clearTimeout(request)
   }, [loadAgenda])
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setClock(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [])
 
   const counts = useMemo(() => ({
     total: orders.length,
@@ -205,92 +151,41 @@ export default function WorkerAgendaPage() {
     completed: orders.filter((order) => order.status === 'completed').length,
   }), [orders])
 
-  async function requestLocation(order: Order): Promise<LocationCheck> {
-    const client = getClient(order.clients)
-    if (client.latitude == null || client.longitude == null) {
-      const result: LocationCheck = { state: 'missing', message: 'Esta morada ainda não tem coordenadas registadas. Peça ao administrador para atualizar a localização do cliente.' }
-      setLocationChecks((current) => ({ ...current, [order.id]: result }))
-      return result
-    }
-    if (!('geolocation' in navigator)) {
-      const result: LocationCheck = { state: 'unavailable', message: 'Este dispositivo ou navegador não disponibiliza localização GPS.' }
-      setLocationChecks((current) => ({ ...current, [order.id]: result }))
-      return result
-    }
-
-    setLocationChecks((current) => ({ ...current, [order.id]: { state: 'checking', message: 'A obter localização GPS…' } }))
-    let result: LocationCheck
-    try {
-      result = await new Promise<LocationCheck>((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            const { latitude, longitude, accuracy } = position.coords
-            const distance = distanceInMeters(latitude, longitude, client.latitude!, client.longitude!)
-            const within = distance <= 100 && accuracy <= 100
-            resolve({
-              state: within ? 'ready' : 'outside',
-              latitude,
-              longitude,
-              accuracy,
-              distance,
-              checkedAt: Date.now(),
-              message: within
-                ? `Localização confirmada a ${Math.round(distance)} m da morada.`
-                : distance > 100
-                  ? `Fora do raio de localização (${Math.round(distance)} m; máximo 100 m).`
-                  : `Sinal GPS impreciso (±${Math.round(accuracy)} m). Tente novamente ao ar livre.`,
-            })
-          },
-          (cause) => {
-            const denied = cause.code === cause.PERMISSION_DENIED
-            resolve({
-              state: denied ? 'denied' : 'unavailable',
-              message: denied
-                ? 'A localização foi bloqueada. Ative a permissão de localização nas definições do navegador.'
-                : cause.code === cause.TIMEOUT
-                  ? 'Não foi possível obter o GPS a tempo. Tente novamente.'
-                  : 'Não foi possível determinar a localização deste dispositivo.',
-            })
-          },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 },
-        )
-      })
-    } catch {
-      result = { state: 'unavailable', message: 'Não foi possível iniciar o serviço de localização. Verifique as permissões do navegador.' }
-    }
-    setLocationChecks((current) => ({ ...current, [order.id]: result }))
-    return result
-  }
-
   async function updateOrder(order: Order, action: 'start' | 'pause' | 'resume' | 'finish') {
     setBusy(`${action}-${order.id}`)
     setNotice('')
     setError('')
     try {
-      const location = await requestLocation(order)
-      if (location.state !== 'ready' || location.latitude == null || location.longitude == null || location.accuracy == null) {
-        setError(location.message)
-        return
-      }
       const rpcName = { start: 'worker_start_cleaning', pause: 'worker_pause_cleaning', resume: 'worker_resume_cleaning', finish: 'worker_finish_cleaning' }[action]
+      let position: GeolocationPosition
+      try {
+        position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          if (!navigator.geolocation) return reject(new Error('GPS indisponível'))
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })
+        })
+      } catch {
+        throw new Error('GPS indisponível ou sem autorização')
+      }
       const { error: rpcError } = await supabase.rpc(rpcName, {
         p_order_id: order.id,
-        p_latitude: location.latitude,
-        p_longitude: location.longitude,
-        p_accuracy_m: location.accuracy,
+        p_latitude: position.coords.latitude,
+        p_longitude: position.coords.longitude,
+        p_accuracy_m: position.coords.accuracy,
       })
       if (rpcError) throw rpcError
       setNotice({ start: 'Limpeza iniciada. Bom trabalho!', pause: 'Cronómetro pausado.', resume: 'Cronómetro retomado.', finish: 'Limpeza concluída com sucesso.' }[action])
       await loadAgenda()
     } catch (cause) {
       const rpcMessage = typeof cause === 'object' && cause !== null && 'message' in cause ? String(cause.message) : ''
-      setError(action === 'start' && rpcMessage.includes('start window opens 5 minutes')
-        ? 'Só poderá iniciar a limpeza a partir de 5 minutos antes do horário agendado.'
-        : rpcMessage.includes('Checklist has pending tasks')
-          ? 'Marque todas as tarefas obrigatórias antes de concluir a limpeza.'
+      setError(rpcMessage.includes('Checklist has pending tasks')
+        ? 'Conclua todas as tarefas da checklist antes de finalizar a limpeza.'
+        : rpcMessage.includes('start window opens')
+          ? 'Só poderá iniciar a limpeza a partir de 5 minutos antes do horário agendado.'
           : rpcMessage.includes('GPS is outside')
-            ? 'Fora do raio de localização permitido ou sinal GPS impreciso. Verifique novamente no local.'
-            : 'Não foi possível atualizar o estado da limpeza. Atualize a página e tente novamente.')
+            ? 'A localização está fora do raio permitido ou o sinal GPS está impreciso. Confirme que está junto ao endereço do serviço e tente novamente.'
+        : rpcMessage.includes('GPS') || rpcMessage.includes('geolocation') || rpcMessage.includes('User denied')
+          ? 'Não foi possível validar a localização. Ative a localização no dispositivo e confirme que está junto ao endereço do serviço.'
+          : 'Não foi possível atualizar o estado da limpeza. Atualize a página e tente novamente.')
     } finally {
       setBusy(null)
     }
@@ -317,51 +212,13 @@ export default function WorkerAgendaPage() {
     await saveChecklist(order, checklist)
   }
 
-  async function addChecklistTask(event: React.FormEvent<HTMLFormElement>, order: Order) {
-    event.preventDefault()
-    const draft = newTaskDraft[order.id] || { label: '', category: 'Cozinha' }
-    const label = draft.label.trim()
-    const category = draft.category || 'Extras / Outros'
-    const checklist = order.worker_checklist ?? []
-
-    if (!label) return
-    if (checklist.length >= 50) {
-      setError('O checklist atingiu o limite de 50 tarefas.')
-      return
-    }
-
-    const saved = await saveChecklist(order, [...checklist, { id: crypto.randomUUID(), category, label, done: false }])
-    if (saved) {
-      setNewTaskDraft((current) => ({ ...current, [order.id]: { label: '', category: draft.category } }))
-    }
-  }
-
-  async function uploadPhotos(order: Order, kind: 'before' | 'after', files: FileList | null) {
-    if (!files?.length || !userId) return
-    setBusy(`photo-${order.id}`)
-    setError('')
+  const copyAddressToClipboard = async (orderId: string, addressText: string) => {
     try {
-      for (const file of Array.from(files)) {
-        if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
-          throw new Error('Escolha imagens até 10 MB.')
-        }
-        const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-        const path = `${userId}/${order.id}/${kind}/${crypto.randomUUID()}.${extension}`
-        const { error: uploadError } = await supabase.storage.from('worker-cleaning-photos').upload(path, file, { contentType: file.type, upsert: false })
-        if (uploadError) throw uploadError
-        const { error: attachError } = await supabase.rpc('worker_attach_photo', { p_order_id: order.id, p_photo_type: kind, p_storage_path: path })
-        if (attachError) throw attachError
-        const { data: signed } = await supabase.storage.from('worker-cleaning-photos').createSignedUrl(path, 600)
-        if (signed?.signedUrl) {
-          setPhotos((current) => ({ ...current, [order.id]: { before: current[order.id]?.before ?? [], after: current[order.id]?.after ?? [], [kind]: [...(current[order.id]?.[kind] ?? []), { path, url: signed.signedUrl }] } }))
-        }
-      }
-      setNotice('Fotografia guardada com sucesso.')
-      await loadAgenda()
-    } catch (cause) {
-      setError(cause instanceof Error && cause.message === 'Escolha imagens até 10 MB.' ? cause.message : 'Não foi possível enviar as fotografias. Confirme a ligação e tente novamente.')
-    } finally {
-      setBusy(null)
+      await navigator.clipboard.writeText(addressText)
+      setCopiedAddressId(orderId)
+      setTimeout(() => setCopiedAddressId(null), 2500)
+    } catch {
+      setError('Não foi possível copiar a morada neste dispositivo.')
     }
   }
 
@@ -407,22 +264,33 @@ export default function WorkerAgendaPage() {
 
           {error && <div role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">{error}</div>}
           {notice && <div role="status" className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{notice}</div>}
-          <div role="tablist" aria-label="Período da agenda" className="mt-6 grid grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">{([['today', 'Hoje'], ['week', 'Esta semana'], ['month', 'Este mês']] as const).map(([view, label]) => <button key={view} type="button" role="tab" aria-selected={agendaView === view} onClick={() => setAgendaView(view)} className={`min-h-11 rounded-xl px-3 text-sm font-extrabold transition ${agendaView === view ? 'bg-[#0B192C] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>{label}</button>)}</div>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+            <div role="tablist" aria-label="Período da agenda" className="grid flex-1 grid-cols-3 gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">{([['today', 'Hoje'], ['week', 'Esta semana'], ['month', 'Este mês']] as const).map(([view, label]) => <button key={view} type="button" role="tab" aria-selected={agendaView === view} onClick={() => { setAgendaView(view); setPeriodOffset(0) }} className={`min-h-11 rounded-xl px-3 text-sm font-extrabold transition ${agendaView === view ? 'bg-[#0B192C] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>{label}</button>)}</div>
+            <div className="flex gap-2"><button type="button" aria-label="Período anterior" onClick={() => setPeriodOffset((offset) => offset - 1)} className="min-h-11 min-w-12 rounded-xl border border-slate-200 bg-white text-lg font-bold text-slate-700 hover:bg-slate-50">‹</button><button type="button" onClick={() => setPeriodOffset((offset) => offset + 1)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40">Seguinte ›</button>{periodOffset !== 0 && <button type="button" onClick={() => setPeriodOffset(0)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">Hoje</button>}</div>
+          </div>
           <div className="mt-8 flex items-end justify-between gap-3"><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-700">Rota de trabalho</p><h2 className="mt-1 text-2xl font-black tracking-tight">As suas visitas</h2></div><span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600">{counts.total} {counts.total === 1 ? 'serviço' : 'serviços'}</span></div>
 
           {orders.length === 0 ? <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm"><span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-2xl text-sky-700">✓</span><h3 className="mt-4 font-extrabold">Sem visitas atribuídas {agendaView === 'today' ? 'para hoje' : agendaView === 'week' ? 'esta semana' : 'este mês'}</h3><p className="mt-2 text-sm text-slate-500">Quando a equipa atribuir serviços à sua conta, aparecem aqui.</p></div> : <div className="mt-5 space-y-5">{orders.map((order) => {
             const client = getClient(order.clients)
             const address = client.address?.trim() ?? ''
             const checklist = order.worker_checklist ?? []
-            const startAvailableAt = new Date(order.scheduled_date).getTime() - 5 * 60_000
-            const canStartNow = clock >= startAvailableAt
-            const locationCheck = locationChecks[order.id]
-            const locationIsReady = locationCheck?.state === 'ready' && !!locationCheck.checkedAt && clock - locationCheck.checkedAt < 60_000
-            const phone = client.phone ? whatsappNumber(client.phone) : ''
             const completedTasks = checklist.filter((task) => task.done)
             const checklistComplete = checklist.length > 0 && completedTasks.length === checklist.length
             const completionProgress = checklist.length ? Math.round((completedTasks.length / checklist.length) * 100) : 0
-            
+
+            // O servidor permite iniciar até 5 minutos antes do agendamento.
+            const startAvailableAt = new Date(order.scheduled_date).getTime() - 5 * 60_000
+            const canStartNow = clock >= startAvailableAt
+
+            // Links de Navegação (Google Maps, Waze, Apple Maps)
+            const destinationQuery = client.latitude !== null && client.longitude !== null
+              ? `${client.latitude},${client.longitude}`
+              : address || 'Portugal'
+
+            const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destinationQuery)}`
+            const wazeUrl = `https://waze.com/ul?q=${encodeURIComponent(destinationQuery)}&navigate=yes`
+            const appleMapsUrl = `https://maps.apple.com/?q=${encodeURIComponent(destinationQuery)}`
+
             // Checklist inicia SEMPRE fechada (false) por defeito
             const isOpen = checklistOpen[order.id] ?? false
 
@@ -436,8 +304,70 @@ export default function WorkerAgendaPage() {
             }, {})
 
             return <article key={order.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/[0.03] sm:rounded-3xl">
-              <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6"><div className="flex min-w-0 gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#0B192C] text-lg text-[#00D4FF]">⌂</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="text-lg font-extrabold">{client.name || 'Cliente'}</h3><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset ${status.style}`}>{status.label}</span></div><p className="mt-1 text-sm font-semibold text-slate-600">{order.service_type}</p><p className="mt-2 text-xs font-medium capitalize text-slate-400">{formatTime(order.scheduled_date)} · {formatDate(order.scheduled_date)}</p></div></div>
-                {order.status === 'pending' && <div className="w-full space-y-2 sm:w-auto sm:min-w-56"><button type="button" disabled={busy !== null || !canStartNow || !locationIsReady} onClick={() => void updateOrder(order, 'start')} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0B192C] px-5 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-55"><span aria-hidden="true">▶</span>{busy === `start-${order.id}` ? 'A iniciar...' : !canStartNow ? `Disponível às ${formatTime(new Date(startAvailableAt).toISOString())}` : 'Iniciar limpeza'}</button><button type="button" disabled={busy !== null || locationCheck?.state === 'checking'} onClick={() => void requestLocation(order)} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-4 text-xs font-extrabold text-cyan-950 transition hover:bg-cyan-100 disabled:cursor-wait disabled:opacity-60">⌖ {locationCheck?.state === 'checking' ? 'A verificar GPS…' : locationIsReady ? 'Atualizar verificação GPS' : 'Verificar localização'}</button><p role="status" className={`text-center text-[11px] font-semibold ${locationIsReady ? 'text-emerald-700' : 'text-slate-500'}`}>{locationCheck?.message ?? 'Confirme que está na morada para ativar o início.'}</p>{!canStartNow && <p className="text-center text-[11px] font-semibold text-amber-700">Aguardar horário permitido — disponível a partir das {formatTime(new Date(startAvailableAt).toISOString())}.</p>}</div>}</div>
+              <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+                <div className="flex min-w-0 gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#0B192C] text-lg text-[#00D4FF]">⌂</span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-extrabold">{client.name || 'Cliente'}</h3>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset ${status.style}`}>{status.label}</span>
+                    </div>
+                    <p className="mt-1 text-sm font-semibold text-slate-600">{order.service_type}</p>
+                    <p className="mt-2 text-xs font-medium capitalize text-slate-400">{formatTime(order.scheduled_date)} · {formatDate(order.scheduled_date)}</p>
+                    {client.phone && <a href={`tel:${client.phone}`} className="mt-2 inline-flex min-h-10 items-center rounded-lg bg-sky-50 px-3 text-xs font-bold text-sky-800 hover:bg-sky-100">☎ Ligar ao cliente · {client.phone}</a>}
+                    {order.notes?.trim() && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><strong>Instruções:</strong> {order.notes}</p>}
+
+                    {/* Morada, Botão de Copiar e Opções de Navegação (Maps, Waze, Apple Maps) */}
+                    {address && (
+                      <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-slate-700">📍 {address}</p>
+                          <button
+                            type="button"
+                            onClick={() => copyAddressToClipboard(order.id, address)}
+                            className="shrink-0 rounded-lg bg-white border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-100 transition shadow-xs"
+                          >
+                            {copiedAddressId === order.id ? '✓ Morada copiada!' : '📋 Copiar morada'}
+                          </button>
+                        </div>
+                        <div className="mt-2.5 flex flex-wrap gap-2">
+                          <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition">
+                            🗺️ Google Maps
+                          </a>
+                          <a href={wazeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition">
+                            🚗 Waze
+                          </a>
+                          <a href={appleMapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition">
+                            🍎 Apple Maps
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {order.status === 'pending' && (
+                  <div className="w-full space-y-2 sm:w-auto sm:min-w-56">
+                    <button
+                      type="button"
+                      disabled={busy !== null || !canStartNow}
+                      onClick={() => void updateOrder(order, 'start')}
+                      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0B192C] px-5 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:opacity-55 disabled:cursor-not-allowed"
+                    >
+                      <span aria-hidden="true">▶</span>
+                      {busy === `start-${order.id}` ? 'A iniciar...' : !canStartNow ? `Disponível às ${formatTime(new Date(startAvailableAt).toISOString())}` : 'Iniciar limpeza'}
+                    </button>
+                    {!canStartNow && (
+                      <p className="text-center text-[11px] font-semibold text-amber-700">
+                        ⚠️ Disponível 5 min antes ({formatTime(new Date(startAvailableAt).toISOString())})
+                      </p>
+                    )}
+                  </div>
+                )}
+                {order.status === 'in_progress' && <div className="w-full space-y-2 sm:w-auto sm:min-w-56">
+                  {order.paused_at ? <button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'resume')} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-5 text-sm font-extrabold text-white hover:bg-violet-800 disabled:opacity-50">{busy === `resume-${order.id}` ? 'A retomar...' : '▶ Retomar limpeza'}</button> : <button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'pause')} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-5 text-sm font-extrabold text-violet-800 hover:bg-violet-100 disabled:opacity-50">{busy === `pause-${order.id}` ? 'A pausar...' : 'Ⅱ Pausar limpeza'}</button>}
+                </div>}
+              </div>
 
               {/* BARRA DO ACORDEÃO PARA MOSTRAR/OCULTAR CHECKLIST */}
               <div className="border-b border-slate-100 bg-slate-50 px-5 py-3 sm:px-6 flex items-center justify-between">
@@ -450,15 +380,17 @@ export default function WorkerAgendaPage() {
                 <button
                   type="button"
                   onClick={() => toggleChecklistOpen(order.id)}
+                  aria-expanded={isOpen}
+                  aria-controls={`checklist-${order.id}`}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-100 cursor-pointer"
                 >
                   <span>{isOpen ? '▲ Ocultar checklist' : '▼ Mostrar checklist'}</span>
                 </button>
               </div>
 
-              {/* CONTEÚDO DA CHECKLIST (APENAS APARECE SE isOpen FOR true) */}
+              {/* CONTEÚDO DA CHECKLIST E BOTÃO DE FINALIZAR NO FIM */}
               {isOpen && (
-                <div className="p-5 sm:p-6 space-y-6">
+                <div id={`checklist-${order.id}`} className="p-5 sm:p-6 space-y-6">
                   {Object.entries(groupedTasks).map(([category, tasks]) => (
                     <div key={category} className="space-y-3">
                       <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">{category}</h4>
@@ -468,6 +400,7 @@ export default function WorkerAgendaPage() {
                             <input
                               type="checkbox"
                               checked={task.done}
+                              disabled={busy !== null || order.status === 'completed' || order.status === 'cancelled'}
                               onChange={() => void toggleTask(order, task.id)}
                               className="h-4 w-4 rounded border-slate-300 text-[#0B192C] focus:ring-[#00D4FF]"
                             />
@@ -477,6 +410,26 @@ export default function WorkerAgendaPage() {
                       </div>
                     </div>
                   ))}
+
+                  {/* BOTÃO DE FINALIZAR LIMPEZA NO FINAL DO CHECKLIST */}
+                  {order.status === 'in_progress' && (
+                    <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <p className="text-xs font-medium text-slate-500">
+                        {checklistComplete
+                          ? '✓ Todas as tarefas estão concluídas. Já pode finalizar.'
+                          : `⚠️ Conclua todas as tarefas (${completedTasks.length}/${checklist.length}) para finalizar.`}
+                      </p>
+                      <button
+                        type="button"
+                        disabled={busy !== null || !checklistComplete || Boolean(order.paused_at)}
+                        onClick={() => void updateOrder(order, 'finish')}
+                        className="inline-flex min-h-12 w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 text-sm font-extrabold text-white transition hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                      >
+                        <span>✓</span>
+                        {busy === `finish-${order.id}` ? 'A finalizar...' : 'Finalizar limpeza'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </article>
