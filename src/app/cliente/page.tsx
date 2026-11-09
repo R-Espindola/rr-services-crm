@@ -13,7 +13,7 @@ interface Client {
   postal_code?: string | null;
   locality?: string | null;
   notes?: string | null;
-  payment_terms?: string | null; // Adicionado para suportar faturas mensais vs por serviço
+  payment_terms?: string | null;
 }
 
 interface Order {
@@ -23,7 +23,7 @@ interface Order {
   scheduled_date: string | null;
   total_amount: number;
   status: string;
-  payment_status?: string | null; // Adicionado para controlo de pagamento
+  payment_status?: string | null;
   notes?: string | null;
 }
 
@@ -46,11 +46,6 @@ interface ExtraService {
   desc: string;
   preco: number;
   imagem: string;
-  price_type?: string | null;
-  price?: number;
-  category?: string | null;
-  image_url?: string | null;
-  is_available?: boolean;
 }
 
 interface Product {
@@ -59,11 +54,6 @@ interface Product {
   preco: number;
   imagem: string;
   description?: string | null;
-  category?: string | null;
-  price?: number;
-  stock_quantity?: number;
-  image_url?: string | null;
-  is_available?: boolean;
 }
 
 const formatarPreco = (valor: number) =>
@@ -92,6 +82,12 @@ export default function ClienteDashboard() {
   const [extraSelecionado, setExtraSelecionado] = useState<string[]>([]);
   const [observacoes, setObservacoes] = useState("");
   const [mensagem, setMensagem] = useState("");
+  const [submittingExtra, setSubmittingExtra] = useState(false);
+
+  // Estados de Avaliação
+  const [rating, setRating] = useState<number>(5);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackEnviado, setFeedbackEnviado] = useState(false);
 
   // Dados do cliente autenticado
   const [cliente, setCliente] = useState<Client | null>(null);
@@ -116,7 +112,7 @@ export default function ClienteDashboard() {
         return;
       }
 
-      // 1. Carregar o perfil ligado ao ID autenticado incluindo o campo payment_terms
+      // 1. Carregar o perfil ligado ao ID autenticado
       const { data: clientData, error: clientError } = await supabase
         .from("clients")
         .select("id, name, email, phone, address, postal_code, locality, notes, payment_terms")
@@ -147,7 +143,6 @@ export default function ClienteDashboard() {
       const orders = (ordersData || []) as Order[];
       const now = new Date();
 
-      // Próximo serviço confirmado (pendente ou em execução, data futura ou hoje)
       const proximo = orders.find(
         (o) =>
           (o.status === "pending" || o.status === "in_progress") &&
@@ -156,11 +151,9 @@ export default function ClienteDashboard() {
       );
       setProximoServico(proximo || null);
 
-      // Pedidos pendentes de confirmação
       const pendentes = orders.filter((o) => o.status === "pending");
       setPedidosPendentes(pendentes);
 
-      // Último serviço concluído
       const concluidos = orders
         .filter((o) => o.status === "completed")
         .sort(
@@ -170,26 +163,26 @@ export default function ClienteDashboard() {
         );
       setUltimoConcluido(concluidos[0] || null);
 
-      // 3. Carregar orçamentos pendentes/por responder do cliente
-      const { data: quotesData, error: quotesError } = await supabase
+      // 3. Carregar orçamentos pendentes
+      const { data: quotesData } = await supabase
         .from("quotes")
         .select("*")
         .eq("client_id", clientData.id)
         .in("status", ["pending", "sent"])
         .order("created_at", { ascending: false });
 
-      if (!quotesError && quotesData) {
+      if (quotesData) {
         setOrcamentosPendentes(quotesData as Quote[]);
       }
 
-      // 4. Carregar serviços extra disponíveis
-      const { data: extrasData, error: extrasError } = await supabase
+      // 4. Carregar serviços extra
+      const { data: extrasData } = await supabase
         .from("services_catalog")
         .select("*")
         .eq("is_available", true)
         .order("category", { ascending: true });
 
-      if (!extrasError && extrasData) {
+      if (extrasData) {
         setServicosExtra(
           (extrasData as any[]).map((item) => ({
             id: item.id,
@@ -201,15 +194,15 @@ export default function ClienteDashboard() {
         );
       }
 
-      // 5. Carregar produtos da loja disponíveis
-      const { data: productsData, error: productsError } = await supabase
+      // 5. Carregar produtos da loja
+      const { data: productsData } = await supabase
         .from("products")
         .select("*")
         .eq("is_available", true)
         .gt("stock_quantity", 0)
         .order("name", { ascending: true });
 
-      if (!productsError && productsData) {
+      if (productsData) {
         setProdutosLoja(
           (productsData as any[]).map((item) => ({
             id: item.id,
@@ -249,22 +242,62 @@ export default function ClienteDashboard() {
     );
   }
 
-  function submeterPedido(event: FormEvent<HTMLFormElement>) {
+  async function submeterPedido(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (extraSelecionado.length === 0) return;
+    if (extraSelecionado.length === 0 || !cliente || !proximoServico) return;
 
-    setMensagem(
-      "Seleção preparada. Para concluir o pedido, ligue este formulário à API/Supabase da R&R Services."
-    );
+    setSubmittingExtra(true);
+    setMensagem("");
+
+    try {
+      const nomesExtras = extrasEscolhidos.map(e => e.titulo).join(", ");
+      const notasCompletas = `Serviço extra solicitado pelo cliente: ${nomesExtras}. Obs: ${observacoes}`;
+      const novoTotal = Number(proximoServico.total_amount) + totalExtras;
+
+      // Atualiza a ordem atual com o novo valor e as notas dos extras
+      const { error: updateError } = await supabase
+        .from("orders")
+        .update({
+          total_amount: novoTotal,
+          notes: proximoServico.notes ? `${proximoServico.notes} | ${notasCompletas}` : notasCompletas
+        })
+        .eq("id", proximoServico.id);
+
+      if (updateError) throw updateError;
+
+      setMensagem("Sucesso! Os serviços extra foram acrescentados à sua próxima visita.");
+      setExtraSelecionado([]);
+      setObservacoes("");
+      await carregarDados();
+    } catch (err: any) {
+      setMensagem("Erro ao submeter o pedido: " + (err.message || "Tente novamente."));
+    } finally {
+      setSubmittingExtra(false);
+    }
+  }
+
+  async function enviarFeedback(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ultimoConcluido || !cliente) return;
+
+    try {
+      // Regista feedback nas notas da ordem ou numa tabela dedicada se existir
+      await supabase
+        .from("orders")
+        .update({ notes: `${ultimoConcluido.notes || ''} [Avaliação do cliente: ${rating}⭐ - "${feedbackText}"]` })
+        .eq("id", ultimoConcluido.id);
+
+      setFeedbackEnviado(true);
+    } catch {
+      alert("Erro ao enviar avaliação.");
+    }
   }
 
   if (loading) {
     return (
       <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
-        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-          <div className="text-center py-20 text-slate-400 font-medium">
-            A carregar o seu portal...
-          </div>
+        <main className="mx-auto max-w-7xl px-4 py-20 text-center text-slate-400 font-medium">
+          A carregar o seu portal...
         </main>
       </div>
     );
@@ -273,16 +306,10 @@ export default function ClienteDashboard() {
   if (error) {
     return (
       <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
-        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <main className="mx-auto max-w-7xl px-4 py-20">
           <div className="bg-red-50 border border-red-200 p-6 rounded-2xl text-center text-red-800 text-sm font-medium">
             {error}
           </div>
-          <Link
-            href="/cliente"
-            className="mt-6 inline-block text-sm font-bold text-[#00D4FF] hover:underline"
-          >
-            Tentar novamente
-          </Link>
         </main>
       </div>
     );
@@ -292,171 +319,226 @@ export default function ClienteDashboard() {
 
   return (
     <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
-      <a
-        href="#conteudo"
-        className="sr-only z-[60] rounded-lg bg-white p-3 focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
-      >
-        Saltar para o conteúdo
-      </a>
-
-      <main id="conteudo" className="mx-auto max-w-7xl space-y-5 px-4 py-5 pb-8 sm:space-y-7 sm:px-6 sm:py-8 lg:px-8">
-        <section className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ring-1 ring-slate-900/[0.02] sm:flex-row sm:items-center sm:p-7">
+      <main id="conteudo" className="mx-auto max-w-7xl space-y-6 px-4 py-6 pb-12 sm:space-y-8 sm:px-6 sm:py-8 lg:px-8">
+        
+        {/* CABEÇALHO */}
+        <section className="flex flex-col justify-between gap-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:p-8">
           <div>
-            <p className="text-sm font-bold uppercase tracking-wider text-sky-700">A sua área pessoal</p>
-            <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
-              Olá, {nomeCurto} <span aria-hidden="true">👋</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-sky-800">
+              A sua área pessoal
+            </span>
+            <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl text-[#0B192C]">
+              Olá, {nomeCurto} 👋
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Consulte a sua próxima visita, gerir os seus serviços e encontre ajuda sempre que precisar.
+            <p className="mt-1 text-sm text-slate-500">
+              Consulte a sua próxima visita, personalize serviços e acompanhe o estado da sua conta.
             </p>
           </div>
-          <Link href="/cliente/perfil" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-300 px-4 py-3 text-sm font-bold transition hover:border-[#00D4FF] hover:bg-cyan-50 focus:outline-none focus:ring-2 focus:ring-sky-500">
-            <span aria-hidden="true">⌖</span> Gerir morada
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/cliente/perfil" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold transition hover:border-[#00D4FF] hover:bg-cyan-50 shadow-xs">
+              ⚙️ Gerir perfil e morada
+            </Link>
+          </div>
         </section>
 
+        {/* ALERTA DE ORÇAMENTOS PENDENTES (NOVO RECURSO) */}
+        {orcamentosPendentes.length > 0 && (
+          <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-black uppercase tracking-wider text-amber-800 bg-amber-200/60 px-2.5 py-1 rounded-full">Proposta Pendente</span>
+                <h2 className="text-base font-black text-amber-950 mt-2">Tem {orcamentosPendentes.length} orçamento(s) a aguardar aprovação</h2>
+                <p className="text-xs text-amber-900 mt-0.5">Reveza os detalhes da proposta enviada pela R&R Services.</p>
+              </div>
+              <Link href="/cliente/pedidos" className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition">
+                Ver Proposta →
+              </Link>
+            </div>
+          </section>
+        )}
+
+        {/* PRÓXIMO SERVIÇO */}
         {proximoServico ? (
-          <section aria-labelledby="marcacao-titulo" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="bg-[#0B192C] p-5 text-white sm:p-7 lg:flex lg:items-center lg:justify-between lg:gap-8">
+          <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
+            <div className="bg-[#0B192C] p-6 text-white sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-[#00D4FF] px-3 py-1 text-xs font-extrabold text-[#0B192C]">Próxima intervenção</span>
-                  <span className="text-xs text-slate-300">Referência: #{proximoServico.id.substring(0, 8).toUpperCase()}</span>
+                  <span className="rounded-full bg-[#00D4FF] px-3.5 py-1 text-[11px] font-black text-[#0B192C]">Próxima intervenção</span>
+                  <span className="text-xs text-slate-300 font-mono">Ref: #{proximoServico.id.substring(0, 8).toUpperCase()}</span>
                 </div>
-                <h2 id="marcacao-titulo" className="mt-3 text-xl font-extrabold sm:text-2xl">
+                <h2 className="mt-3 text-xl font-black sm:text-2xl text-white">
                   {proximoServico.service_type}
                 </h2>
-                <p className="mt-2 text-sm font-semibold text-[#00D4FF] sm:text-base">
-                  <span aria-hidden="true">▦</span> {data} · {horario}
+                <p className="mt-2 text-sm font-extrabold text-[#00D4FF] sm:text-base flex items-center gap-1.5">
+                  <span>🗓️</span> {data} às {horario}
                 </p>
               </div>
-              <div className="mt-5 flex items-center justify-between gap-4 border-t border-white/10 pt-4 lg:mt-0 lg:block lg:min-w-40 lg:border-0 lg:pt-0 lg:text-right">
+              <div className="mt-5 flex items-center justify-between gap-4 border-t border-white/10 pt-4 lg:mt-0 lg:block lg:text-right">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">Valor da marcação</p>
-                  <p className="mt-1 text-3xl font-black text-[#00D4FF]">{formatarPreco(proximoServico.total_amount)}</p>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Valor da marcação</p>
+                  <p className="mt-1 text-2xl sm:text-3xl font-black text-[#00D4FF]">{formatarPreco(proximoServico.total_amount)}</p>
                 </div>
-                
-                {/* Lógica de Pagamento baseada nas condições do cliente */}
                 <div className="mt-2">
                   {cliente?.payment_terms === 'monthly_invoice' ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-400/10 px-3 py-1.5 text-xs font-bold text-sky-300">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-3 py-1.5 text-xs font-bold text-sky-300 border border-sky-500/20">
                       📅 Faturação Mensal (Fim do Mês)
                     </span>
                   ) : proximoServico.payment_status === 'paid' ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-300">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 border border-emerald-500/20">
                       ✓ Pago
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-3 py-1.5 text-xs font-bold text-amber-300">
-                      ⏳ Falta Pagar
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-300 border border-amber-500/20">
+                      ⏳ Pagamento no local / por serviço
                     </span>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="grid gap-6 p-5 sm:p-7 lg:grid-cols-[1fr_1.2fr_0.9fr]">
+            <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_1.2fr_0.9fr]">
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Local da intervenção</h3>
-                <p className="mt-2 text-sm font-semibold leading-6">{[cliente?.address, cliente?.postal_code, cliente?.locality].filter(Boolean).join(", ") || "Morada não registada"}</p>
-                <Link href="/cliente/perfil" className="mt-2 inline-block text-sm font-semibold text-sky-700 hover:underline">Alterar morada</Link>
+                <h3 className="text-[11px] font-black uppercase tracking-wider text-slate-400">Local da intervenção</h3>
+                <p className="mt-2 text-xs sm:text-sm font-bold text-[#0B192C] leading-relaxed">
+                  {[cliente?.address, cliente?.postal_code, cliente?.locality].filter(Boolean).join(", ") || "Morada não registada"}
+                </p>
               </div>
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Serviços incluídos</h3>
-                <ul className="mt-2 space-y-2">
-                  <li className="flex gap-2 text-sm text-slate-700">
-                    <span className="font-black text-emerald-600" aria-hidden="true">✓</span>{proximoServico.service_type}
-                  </li>
-                  {proximoServico.notes && (
-                    <li className="flex gap-2 text-sm text-slate-700">
-                      <span className="font-black text-emerald-600" aria-hidden="true">✓</span>{proximoServico.notes}
-                    </li>
-                  )}
-                </ul>
+                <h3 className="text-[11px] font-black uppercase tracking-wider text-slate-400">Detalhes associados</h3>
+                <p className="mt-2 text-xs sm:text-sm font-medium text-slate-600">
+                  {proximoServico.notes || "Nenhuma observação especial registada para esta visita."}
+                </p>
               </div>
-              <div className="flex flex-col justify-center gap-3 lg:border-l lg:border-slate-100 lg:pl-6">
-                <a href="#servicos-extra" className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-[#00D4FF] px-4 py-3 text-sm font-extrabold text-[#0B192C] transition hover:bg-cyan-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2">
-                  + Adicionar serviços extra
+              <div className="flex flex-col justify-center gap-2.5 lg:border-l lg:border-slate-100 lg:pl-6">
+                <a href="#servicos-extra" className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-[#00D4FF] px-4 py-2.5 text-xs font-black text-[#0B192C] transition hover:bg-[#00c2ea] shadow-sm">
+                  + Adicionar Serviços Extra
                 </a>
-                <Link href="/cliente/pedidos" className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-4 py-3 text-center text-sm font-bold transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                  Gerir marcação
+                <Link href="/cliente/pedidos" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50">
+                  Ver Histórico de Marcações
                 </Link>
               </div>
             </div>
           </section>
         ) : (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm text-center">
-            <h2 className="text-lg font-bold text-[#0B192C] mb-4">Não tem serviços agendados</h2>
-            <p className="text-slate-600 text-sm mb-6">
-              Neste momento não tem nenhuma limpeza agendada. Pode solicitar um novo serviço abaixo.
+          <section className="rounded-3xl border border-slate-200/80 bg-white p-8 shadow-sm text-center space-y-3">
+            <h2 className="text-lg font-black text-[#0B192C]">Sem serviços agendados de momento</h2>
+            <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
+              Precisa de uma nova limpeza ou manutenção? Solicite um orçamento ou adicione serviços extra agora mesmo.
             </p>
-            <Link href="/cliente/extras" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0B192C] px-6 py-3 text-sm font-bold text-white hover:bg-slate-800 transition shadow-sm">
-              <span>+ Solicitar serviço</span>
+            <Link href="/cliente/pedidos" className="inline-flex items-center justify-center rounded-2xl bg-[#0B192C] px-5 py-3 text-xs font-bold text-white hover:bg-slate-800 transition shadow-sm">
+              Agendar Novo Serviço
             </Link>
           </section>
         )}
 
-        <section aria-label="Acesso rápido" className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+        {/* ATALHOS RÁPIDOS */}
+        <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[
-            { href: "#servicos-extra", icon: "✦", title: "Serviços extra", text: "Personalize a sua limpeza" },
-            { href: "/cliente/pedidos", icon: "▤", title: "Marcações", text: "Consulte o seu histórico" },
-            { href: "/cliente/loja", icon: "🛒", title: "Loja", text: "Produtos de manutenção" },
-            { href: "#apoio", icon: "☏", title: "Apoio ao cliente", text: "Estamos aqui para ajudar" },
+            { href: "#servicos-extra", icon: "✦", title: "Serviços extra", text: "Personalize a visita" },
+            { href: "/cliente/pedidos", icon: "▤", title: "Marcações", text: "Histórico completo" },
+            { href: "/cliente/loja", icon: "🛒", title: "Loja de produtos", text: "Manutenção em casa" },
+            { href: "#apoio", icon: "☏", title: "Apoio direto", text: "Fale connosco" },
           ].map((atalho) => (
-            <a key={atalho.title} href={atalho.href} className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#00D4FF] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-500 sm:p-5">
-              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-cyan-50 text-lg text-sky-800 transition group-hover:bg-[#00D4FF]" aria-hidden="true">{atalho.icon}</span>
-              <h3 className="mt-3 text-sm font-extrabold">{atalho.title}</h3>
-              <p className="mt-1 text-xs leading-5 text-slate-500">{atalho.text}</p>
+            <a key={atalho.title} href={atalho.href} className="group rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:border-[#00D4FF] hover:shadow-lg">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-cyan-50 text-base text-sky-800 transition group-hover:bg-[#00D4FF]">{atalho.icon}</span>
+              <h3 className="mt-3 text-xs sm:text-sm font-black text-[#0B192C]">{atalho.title}</h3>
+              <p className="mt-0.5 text-[11px] text-slate-500">{atalho.text}</p>
             </a>
           ))}
         </section>
 
-        <section id="servicos-extra" className="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        {/* SECÇÃO DE AVALIAÇÃO DO ÚLTIMO SERVIÇO (NOVO RECURSO) */}
+        {ultimoConcluido && !feedbackEnviado && (
+          <section className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">Último Serviço Concluído</span>
+                <h3 className="text-base font-black text-[#0B192C] mt-2">Como avalia a limpeza de "{ultimoConcluido.service_type}"?</h3>
+              </div>
+            </div>
+            <form onSubmit={enviarFeedback} className="space-y-4">
+              <div className="flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setRating(star)}
+                    className={`text-2xl transition ${star <= rating ? 'text-amber-400 scale-110' : 'text-slate-200'}`}
+                  >
+                    ★
+                  </button>
+                ))}
+                <span className="ml-2 text-xs font-extrabold text-slate-600">{rating} de 5 estrelas</span>
+              </div>
+              <div>
+                <textarea
+                  rows={2}
+                  placeholder="Deixe um comentário ou sugestão sobre a equipa..."
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs outline-none focus:border-[#00D4FF] focus:ring-1 focus:ring-[#00D4FF]"
+                />
+              </div>
+              <button type="submit" className="bg-[#0B192C] text-white font-bold px-5 py-2.5 rounded-xl text-xs hover:bg-slate-800 transition">
+                Submeter Avaliação
+              </button>
+            </form>
+          </section>
+        )}
+
+        {feedbackEnviado && (
+          <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center text-xs font-bold text-emerald-800 shadow-sm">
+            Obrigado pelo seu feedback! A sua avaliação foi registada com sucesso. 🎉
+          </section>
+        )}
+
+        {/* SERVIÇOS ADICIONAIS / EXTRA */}
+        <section id="servicos-extra" className="scroll-mt-28 rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm space-y-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between border-b border-slate-100 pb-4">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-sky-700">Personalize a sua visita</p>
-              <h2 className="mt-1 text-xl font-extrabold sm:text-2xl">Serviços adicionais</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Selecione os serviços que pretende acrescentar. O total estimado é atualizado automaticamente.</p>
+              <span className="text-[10px] font-black uppercase tracking-wider text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full">Personalize a visita</span>
+              <h2 className="mt-2 text-xl font-black text-[#0B192C]">Serviços adicionais disponíveis</h2>
+              <p className="mt-1 text-xs sm:text-sm text-slate-500">Selecione os extras que pretende acrescentar à sua próxima limpeza agendada.</p>
             </div>
             {extraSelecionado.length > 0 && (
-              <button type="button" onClick={() => { setExtraSelecionado([]); setMensagem(""); }} className="self-start text-sm font-semibold text-slate-600 underline underline-offset-4 hover:text-slate-900 sm:self-auto">
+              <button type="button" onClick={() => { setExtraSelecionado([]); setMensagem(""); }} className="text-xs font-bold text-rose-600 hover:underline">
                 Limpar seleção
               </button>
             )}
           </div>
 
           {mensagem && (
-            <div role="status" className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+            <div role="status" className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-xs font-bold text-cyan-900">
               {mensagem}
             </div>
           )}
 
           {servicosExtra.length === 0 ? (
-            <div className="mt-6 bg-slate-50 p-6 rounded-2xl border border-slate-200 text-center text-sm text-slate-600">
+            <div className="bg-slate-50 p-6 rounded-2xl text-center text-xs text-slate-400 font-bold">
               Nenhum serviço extra disponível neste momento.
             </div>
           ) : (
-            <form onSubmit={submeterPedido} className="mt-6">
+            <form onSubmit={submeterPedido} className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {servicosExtra.map((item) => {
                   const selecionado = extraSelecionado.includes(item.id);
                   return (
-                    <label key={item.id} className={`flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white transition hover:-translate-y-0.5 hover:shadow-md ${selecionado ? "border-sky-500 ring-2 ring-sky-100" : "border-slate-200"}`}>
+                    <label key={item.id} className={`flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white transition hover:shadow-md ${selecionado ? "border-[#00D4FF] ring-2 ring-[#00D4FF]/20 shadow-sm" : "border-slate-200/80"}`}>
                       <input
                         type="checkbox"
                         checked={selecionado}
                         onChange={() => alternarExtra(item.id)}
                         className="peer sr-only"
                       />
-                      <span className="relative block h-40 overflow-hidden bg-slate-100">
+                      <span className="relative block h-36 overflow-hidden bg-slate-100">
                         <img src={item.imagem} alt="" loading="lazy" className="h-full w-full object-cover transition duration-300 hover:scale-105" />
-                        <span className="absolute right-3 top-3 rounded-lg bg-[#0B192C] px-2.5 py-1.5 text-sm font-extrabold text-[#00D4FF]">{formatarPreco(item.preco)}</span>
-                        {selecionado && <span className="absolute left-3 top-3 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white">Selecionado ✓</span>}
+                        <span className="absolute right-3 top-3 rounded-xl bg-[#0B192C] px-2.5 py-1 text-xs font-black text-[#00D4FF] shadow-xs">{formatarPreco(item.preco)}</span>
+                        {selecionado && <span className="absolute left-3 top-3 rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white shadow-xs">Selecionado ✓</span>}
                       </span>
                       <span className="flex flex-1 flex-col p-4">
-                        <span className="font-bold">{item.titulo}</span>
-                        <span className="mt-1 flex-1 text-sm leading-5 text-slate-600">{item.desc}</span>
-                        <span className={`mt-4 inline-flex min-h-10 items-center justify-center rounded-2xl border px-3 py-2 text-sm font-bold transition ${selecionado ? "border-[#0B192C] bg-[#0B192C] text-white" : "border-slate-300 bg-slate-50 text-[#0B192C]"}`}>
+                        <span className="font-extrabold text-xs text-[#0B192C]">{item.titulo}</span>
+                        <span className="mt-1 flex-1 text-[11px] text-slate-500 leading-normal">{item.desc}</span>
+                        <span className={`mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border px-3 py-2 text-xs font-bold transition ${selecionado ? "border-[#0B192C] bg-[#0B192C] text-white" : "border-slate-200 bg-slate-50 text-[#0B192C]"}`}>
                           {selecionado ? "✓ Adicionado" : "+ Adicionar"}
                         </span>
                       </span>
@@ -466,33 +548,35 @@ export default function ClienteDashboard() {
               </div>
 
               {extraSelecionado.length > 0 && (
-                <div className="mt-6 grid gap-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-6 lg:grid-cols-[1fr_280px]">
+                <div className="grid gap-5 rounded-2xl border border-slate-200 bg-slate-50 p-5 lg:grid-cols-[1fr_280px]">
                   <div>
-                    <label htmlFor="observacoes" className="block text-sm font-bold">Instruções para a equipa <span className="font-normal text-slate-500">(opcional)</span></label>
+                    <label htmlFor="observacoes" className="block text-xs font-bold uppercase text-slate-700">Instruções para a equipa (opcional)</label>
                     <textarea
                       id="observacoes"
                       rows={3}
                       maxLength={500}
-                      placeholder="Ex.: dar especial atenção ao interior do forno."
+                      placeholder="Ex.: dar especial atenção ao interior do forno ou janelas da sala."
                       value={observacoes}
                       onChange={(event) => setObservacoes(event.target.value)}
-                      className="mt-2 w-full resize-y rounded-2xl border border-slate-300 bg-white p-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                      className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 text-xs outline-none focus:border-[#00D4FF] focus:ring-1 focus:ring-[#00D4FF]"
                     />
-                    <p className="mt-1 text-right text-xs text-slate-500">{observacoes.length}/500 caracteres</p>
-                    <p className="mt-3 text-xs leading-5 text-slate-500">O pedido só fica confirmado depois de ser submetido e validado pela equipa R&R Services.</p>
+                    <p className="mt-1 text-right text-[10px] text-slate-400">{observacoes.length}/500 caracteres</p>
                   </div>
-                  <div className="flex flex-col justify-between rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+                  <div className="flex flex-col justify-between rounded-2xl bg-white p-4 border border-slate-200/80 shadow-2xs">
                     <div>
-                      <p className="text-sm font-bold">Resumo do pedido</p>
-                      <p className="mt-3 text-sm text-slate-600">{extraSelecionado.length} {extraSelecionado.length === 1 ? "serviço selecionado" : "serviços selecionados"}</p>
-                      <p className="mt-1 text-sm text-slate-600">Serviços extra <span className="float-right font-semibold text-[#0B192C]">{formatarPreco(totalExtras)}</span></p>
-                      <div className="my-3 border-t border-slate-200" />
-                      <p className="text-sm text-slate-600">Total estimado da visita</p>
-                      <p className="mt-1 text-2xl font-black">{formatarPreco((proximoServico?.total_amount || 0) + totalExtras)}</p>
-                      <p className="mt-1 text-xs text-slate-500">Valor base + serviços selecionados</p>
+                      <p className="text-xs font-black uppercase text-slate-400">Resumo do acréscimo</p>
+                      <p className="mt-2 text-xs font-semibold text-slate-600">{extraSelecionado.length} {extraSelecionado.length === 1 ? "extra selecionado" : "extras selecionados"}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-600">Valor extra <span className="float-right font-black text-[#0B192C]">{formatarPreco(totalExtras)}</span></p>
+                      <div className="my-2.5 border-t border-slate-100" />
+                      <p className="text-xs font-bold text-[#0B192C]">Total estimado da visita</p>
+                      <p className="mt-0.5 text-xl font-black text-[#00D4FF]">{formatarPreco((proximoServico?.total_amount || 0) + totalExtras)}</p>
                     </div>
-                    <button type="submit" className="mt-5 min-h-12 w-full rounded-2xl bg-[#0B192C] px-4 py-3 text-sm font-extrabold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2">
-                      Continuar pedido
+                    <button 
+                      type="submit" 
+                      disabled={submittingExtra || !proximoServico} 
+                      className="mt-4 min-h-11 w-full rounded-xl bg-[#0B192C] px-4 py-2.5 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-50 cursor-pointer shadow-sm"
+                    >
+                      {submittingExtra ? 'A atualizar...' : 'Confirmar e Adicionar à Visita'}
                     </button>
                   </div>
                 </div>
@@ -501,25 +585,26 @@ export default function ClienteDashboard() {
           )}
         </section>
 
+        {/* PRODUTOS DA LOJA RECOMENDADOS */}
         {produtosLoja.length > 0 && (
           <section className="space-y-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between border-b border-slate-100 pb-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-sky-700">Cuidados em casa</p>
-                <h2 className="mt-1 text-xl font-extrabold sm:text-2xl">Produtos recomendados</h2>
-                <p className="mt-1 text-sm text-slate-600">Essenciais para manter a sua casa cuidada entre visitas.</p>
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full">Cuidados em casa</span>
+                <h2 className="mt-2 text-xl font-black text-[#0B192C]">Produtos recomendados</h2>
+                <p className="mt-1 text-xs sm:text-sm text-slate-500">Mantenha a sua casa limpa e protegida entre as nossas visitas.</p>
               </div>
-              <Link href="/cliente/loja" className="text-sm font-bold text-sky-700 hover:underline">Ver toda a loja →</Link>
+              <Link href="/cliente/loja" className="text-xs font-extrabold text-sky-700 hover:underline">Ver toda a loja →</Link>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {produtosLoja.map((produto) => (
-                <article key={produto.id} className="flex gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md sm:flex-col">
-                  <img src={produto.imagem} alt="" loading="lazy" className="h-28 w-28 shrink-0 rounded-2xl bg-slate-100 object-cover sm:h-44 sm:w-full" />
+              {produtosLoja.slice(0, 3).map((produto) => (
+                <article key={produto.id} className="flex gap-4 rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:shadow-md sm:flex-col">
+                  <img src={produto.imagem} alt="" loading="lazy" className="h-28 w-28 shrink-0 rounded-2xl bg-slate-100 object-cover sm:h-40 sm:w-full" />
                   <div className="flex min-w-0 flex-1 flex-col">
-                    <h3 className="text-sm font-bold leading-5">{produto.nome}</h3>
-                    <p className="mt-2 text-lg font-black">{formatarPreco(produto.preco)}</p>
-                    <Link href="/cliente/loja" className="mt-3 inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-300 px-3 py-2 text-sm font-bold transition hover:border-[#00D4FF] hover:bg-cyan-50 sm:mt-auto sm:pt-2">
-                      Ver produto
+                    <h3 className="text-xs font-black text-[#0B192C] leading-snug">{produto.nome}</h3>
+                    <p className="mt-2 text-base font-black text-[#0B192C]">{formatarPreco(produto.preco)}</p>
+                    <Link href="/cliente/loja" className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-[#00D4FF] hover:bg-cyan-50 sm:mt-auto">
+                      Comprar na Loja
                     </Link>
                   </div>
                 </article>
@@ -528,23 +613,21 @@ export default function ClienteDashboard() {
           </section>
         )}
 
-        <section id="apoio" className="scroll-mt-28 rounded-2xl bg-[#0B192C] p-5 text-white shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-7">
+        {/* APOIO AO CLIENTE */}
+        <section id="apoio" className="scroll-mt-28 rounded-3xl bg-[#0B192C] p-6 sm:p-8 text-white shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-6">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-[#00D4FF]">Conte connosco</p>
-            <h2 className="mt-1 text-xl font-extrabold">Precisa de ajuda?</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Tem dúvidas sobre uma marcação ou precisa de ajustar algum detalhe? A nossa equipa está disponível para ajudar.</p>
+            <span className="rounded-full bg-[#00D4FF]/20 text-[#00D4FF] px-3 py-1 text-[10px] font-black uppercase tracking-wider">Conte connosco</span>
+            <h2 className="mt-2 text-xl font-black">Precisa de suporte personalizado?</h2>
+            <p className="mt-1 max-w-xl text-xs sm:text-sm text-slate-300">Tem dúvidas sobre uma marcação, horário ou faturação? A nossa equipa responde rapidamente.</p>
           </div>
-          <a href="mailto:rrservices.pt@gmail.com?subject=Pedido%20de%20apoio%20-%20R%26R%20Services" className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-extrabold text-[#0B192C] transition hover:bg-cyan-50 focus:outline-none focus:ring-2 focus:ring-[#00D4FF] focus:ring-offset-2 focus:ring-offset-[#0B192C] sm:mt-0 sm:w-auto sm:shrink-0">
-            Enviar mensagem
+          <a href="mailto:rrservices.pt@gmail.com?subject=Pedido%20de%20apoio%20-%20R%26R%20Services" className="mt-5 inline-flex min-h-11 items-center justify-center rounded-2xl bg-white px-5 py-3 text-xs font-extrabold text-[#0B192C] transition hover:bg-cyan-50 sm:mt-0 sm:shrink-0 shadow-sm">
+            Enviar Mensagem à Equipa
           </a>
         </section>
       </main>
-      <footer className="border-t border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-500">
+
+      <footer className="border-t border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400 font-medium">
         <p>© 2026 R&R Services. Todos os direitos reservados.</p>
-        <div className="mt-2 flex justify-center gap-4">
-          <Link href="/privacidade" className="hover:text-sky-700 hover:underline">Privacidade</Link>
-          <Link href="/termos" className="hover:text-sky-700 hover:underline">Termos e condições</Link>
-        </div>
       </footer>
     </div>
   );

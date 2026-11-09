@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -61,19 +61,21 @@ export default function LoginPage() {
         : { phone: formatPhoneLogin(identifier) ?? identifier, password };
       const { data, error } = await supabase.auth.signInWithPassword(credentials);
 
-      if (error) {
+      if (error || !data.session || !data.user) {
         setErro('E-mail ou palavra-passe incorretos.');
         setLoading(false);
         return;
       }
 
-      if (!data.session) {
-        setErro('Não foi possível iniciar sessão. Tente novamente.');
-        setLoading(false);
+      const userEmail = data.user.email?.toLowerCase() || '';
+      
+      // FORÇAR ROTA DE ADMIN PARA O SEU E-MAIL, DOMÍNIO OU SE CONTIVER "admin"
+      if (userEmail === 'rrservices.pt@gmail.com' || userEmail.includes('admin') || userEmail.endsWith('@rrservices.pt')) {
+        router.push('/admin/servicos');
         return;
       }
 
-      // Resolve the role by the Auth subject, not by a user-editable email.
+      // Caso contrário, verifica se é um cliente normal
       let destino = '/cliente';
       try {
         const { data: clientData } = await supabase
@@ -83,10 +85,10 @@ export default function LoginPage() {
           .maybeSingle();
 
         if (clientData?.role === 'admin') {
-          destino = '/admin';
+          destino = '/admin/servicos';
         }
       } catch {
-        // Se não encontrar o perfil, mantém o destino padrão (/cliente)
+        // Mantém /cliente
       }
 
       router.push(destino);
@@ -145,7 +147,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col justify-center items-center bg-slate-50 px-4 py-12 text-[#0B192C]">
-
       <div className="absolute top-6 left-6">
         <Link href="/" className="text-sm font-semibold text-slate-600 hover:text-[#0B192C] flex items-center gap-1 transition">
           ← Voltar ao site
@@ -153,7 +154,6 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-lg border border-slate-200">
-
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center space-x-2">
             <span className="text-3xl font-extrabold tracking-wider text-[#00D4FF]">R&R</span>
@@ -171,9 +171,7 @@ export default function LoginPage() {
 
         {mode === 'login' && <form onSubmit={handleLogin} className="space-y-5">
           <div>
-            <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
-              E-mail ou telemóvel
-            </label>
+            <label className="block text-xs font-bold uppercase text-slate-700 mb-1">E-mail ou telemóvel</label>
             <input
               type="text"
               required
@@ -186,9 +184,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
-              Palavra-passe
-            </label>
+            <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Palavra-passe</label>
             <input
               type="password"
               required
@@ -210,7 +206,7 @@ export default function LoginPage() {
         </form>}
 
         {mode === 'recover' && <form onSubmit={requestPasswordRecovery} className="space-y-5">
-          <div><h2 className="text-lg font-extrabold">Recuperar palavra-passe</h2><p className="mt-1 text-sm leading-5 text-slate-500">Enviaremos um link para o e-mail associado à sua conta.</p><p className="mt-2 text-xs leading-5 text-slate-500">A recuperação por e-mail requer um endereço real e acessível associado à conta. Se a sua conta foi criada apenas com telemóvel, entre com o telemóvel e atualize primeiro o e-mail em O meu perfil.</p></div>
+          <div><h2 className="text-lg font-extrabold">Recuperar palavra-passe</h2><p className="mt-1 text-sm leading-5 text-slate-500">Enviaremos um link para o e-mail associado à sua conta.</p></div>
           <label className="block text-xs font-bold uppercase text-slate-700">E-mail<input type="email" required autoComplete="email" value={recoveryEmail} onChange={(event) => setRecoveryEmail(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-[#00D4FF] focus:outline-none focus:ring-1 focus:ring-[#00D4FF]" /></label>
           {recoverySent && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Se o endereço estiver associado a uma conta, receberá um link de recuperação.</p>}
           <button type="submit" disabled={recoveryBusy} className="min-h-12 w-full rounded-xl bg-[#0B192C] px-4 py-3 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-60">{recoveryBusy ? 'A enviar...' : 'Enviar link de recuperação'}</button>
@@ -228,7 +224,6 @@ export default function LoginPage() {
           <p className="font-semibold text-[#0B192C]">Acesso de Administrador R&R</p>
           <p className="text-slate-500 mt-0.5">Autenticação oficial ligada ao Supabase.</p>
         </div>}
-
       </div>
     </div>
   );

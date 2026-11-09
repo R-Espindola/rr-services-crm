@@ -12,6 +12,7 @@ export interface ExtraService {
   category: string
   is_available: boolean
   image_url?: string
+  included_features?: string
 }
 
 export default function ExtrasCatalogPage() {
@@ -20,13 +21,14 @@ export default function ExtrasCatalogPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingService, setEditingService] = useState<ExtraService | null>(null)
 
-  // Campos do formulário de administração
+  // Campos do formulário
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('')
   const [priceType, setPriceType] = useState<'fixed' | 'per_unit' | 'quote'>('fixed')
   const [category, setCategory] = useState('Cozinha')
   const [imageUrl, setImageUrl] = useState('')
+  const [includedFeatures, setIncludedFeatures] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export default function ExtrasCatalogPage() {
     setPriceType('fixed')
     setCategory('Cozinha')
     setImageUrl('')
+    setIncludedFeatures('Execução profissional do serviço\nGarantia de qualidade R&R Services')
     setShowModal(true)
   }
 
@@ -65,6 +68,7 @@ export default function ExtrasCatalogPage() {
     setPriceType(item.price_type || 'fixed')
     setCategory(item.category || 'Cozinha')
     setImageUrl(item.image_url || '')
+    setIncludedFeatures(item.included_features || '')
     setShowModal(true)
   }
 
@@ -77,6 +81,7 @@ export default function ExtrasCatalogPage() {
     setPriceType('fixed')
     setCategory('Cozinha')
     setImageUrl('')
+    setIncludedFeatures('')
   }
 
   async function handleSaveService(e: React.FormEvent) {
@@ -89,7 +94,8 @@ export default function ExtrasCatalogPage() {
       price: priceType === 'quote' ? 0 : parseFloat(price) || 0,
       price_type: priceType,
       category,
-      image_url: imageUrl || null,
+      image_url: imageUrl.trim() || null,
+      included_features: includedFeatures.trim() || null,
       is_available: editingService ? editingService.is_available : true,
     }
 
@@ -153,8 +159,6 @@ export default function ExtrasCatalogPage() {
 
   return (
     <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-slate-50 text-[#0B192C] p-4 sm:p-6 md:p-8">
-      
-      {/* CABEÇALHO DA PÁGINA & BOTÃO ADICIONAR */}
       <div className="flex flex-col md:flex-row justify-between md:items-center mb-8 gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B192C]">Catálogo de Serviços Extra</h1>
@@ -170,13 +174,11 @@ export default function ExtrasCatalogPage() {
         </button>
       </div>
 
-      {/* GRELHA DE SERVIÇOS EXTRA */}
       {loading ? (
         <div className="text-center py-12 text-slate-400 text-sm">A carregar catálogo...</div>
       ) : services.length === 0 ? (
         <div className="bg-white rounded-3xl p-8 sm:p-12 text-center border border-slate-200 shadow-sm">
           <p className="text-slate-600 font-bold text-base">Ainda não existem serviços extra no catálogo.</p>
-          <p className="text-slate-400 text-xs sm:text-sm mt-1">Clique no botão acima para adicionar o primeiro serviço.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -187,13 +189,19 @@ export default function ExtrasCatalogPage() {
                 !item.is_available ? 'opacity-75 border-slate-300 bg-slate-50/50' : 'border-slate-200'
               }`}
             >
+              <div className="relative h-40 bg-slate-100 overflow-hidden">
+                <img 
+                  src={item.image_url || "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=85"} 
+                  alt={item.name} 
+                  className="w-full h-full object-cover" 
+                />
+                <span className="absolute top-3 left-3 bg-[#0B192C]/80 backdrop-blur-xs text-[10px] font-black text-white px-2.5 py-1 rounded-md uppercase">
+                  {item.category}
+                </span>
+              </div>
+
               <div className="p-5 sm:p-6">
                 <div className="flex justify-between items-start mb-3 gap-2">
-                  <span className="text-[10px] sm:text-xs font-bold uppercase px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                    {item.category}
-                  </span>
-
-                  {/* BADGE DE DISPONIBILIDADE */}
                   <button
                     onClick={() => toggleAvailability(item.id, item.is_available)}
                     className={`text-[11px] px-3 py-1 rounded-full font-bold transition cursor-pointer flex items-center gap-1 ${
@@ -201,7 +209,6 @@ export default function ExtrasCatalogPage() {
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                         : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
                     }`}
-                    title="Clique para alterar a disponibilidade"
                   >
                     <span>{item.is_available ? '🟢 Disponível' : '🔒 Indisponível'}</span>
                   </button>
@@ -211,7 +218,6 @@ export default function ExtrasCatalogPage() {
                 <p className="text-slate-600 text-xs sm:text-sm mb-4 line-clamp-2">{item.description || 'Sem descrição.'}</p>
               </div>
 
-              {/* RODAPÉ DO CARTÃO COM PREÇO E AÇÕES DE ADMIN */}
               <div className="px-5 sm:px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3">
                 <div className="flex justify-between items-center text-xs sm:text-sm">
                   <span className="text-slate-500 font-medium">
@@ -224,17 +230,6 @@ export default function ExtrasCatalogPage() {
 
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-200/60">
                   <button
-                    onClick={() => toggleAvailability(item.id, item.is_available)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border ${
-                      item.is_available
-                        ? 'bg-slate-100 hover:bg-amber-50 text-slate-700 border-slate-300 hover:text-amber-700 hover:border-amber-300'
-                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
-                    }`}
-                  >
-                    {item.is_available ? '🔒 Bloquear' : '🔓 Desbloquear'}
-                  </button>
-
-                  <button
                     onClick={() => handleOpenEdit(item)}
                     className="bg-white hover:bg-slate-100 text-slate-700 font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-xs transition cursor-pointer"
                   >
@@ -244,7 +239,6 @@ export default function ExtrasCatalogPage() {
                   <button
                     onClick={() => handleDeleteService(item.id, item.name)}
                     className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold px-3 py-1.5 rounded-lg text-xs transition cursor-pointer border border-rose-200"
-                    title="Eliminar Serviço Extra"
                   >
                     🗑️ Eliminar
                   </button>
@@ -255,7 +249,7 @@ export default function ExtrasCatalogPage() {
         </div>
       )}
 
-      {/* MODAL PARA CRIAR / EDITAR SERVIÇO EXTRA */}
+      {/* MODAL CRIAR / EDITAR */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100 my-auto max-h-[90vh] overflow-y-auto">
@@ -275,7 +269,7 @@ export default function ExtrasCatalogPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Ex: Limpeza de Forno"
-                  className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl text-base sm:text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 font-medium"
                 />
               </div>
 
@@ -284,7 +278,7 @@ export default function ExtrasCatalogPage() {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl text-base sm:text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 font-medium"
                 >
                   <option value="Cozinha">Cozinha</option>
                   <option value="Higienização & Estofos">Higienização & Estofos</option>
@@ -299,7 +293,7 @@ export default function ExtrasCatalogPage() {
                 <select
                   value={priceType}
                   onChange={(e) => setPriceType(e.target.value as any)}
-                  className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl text-base sm:text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 font-medium"
                 >
                   <option value="fixed">Preço Fixo</option>
                   <option value="per_unit">Por Unidade / Dimensão</option>
@@ -317,18 +311,42 @@ export default function ExtrasCatalogPage() {
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                     placeholder="Ex: 25.00"
-                    className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl text-base sm:text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 font-medium"
                   />
                 </div>
               )}
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">URL da Imagem</label>
+                <input
+                  type="url"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  placeholder="https://exemplo.com/imagem.jpg"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">O que está incluído? (Um por linha)</label>
+                <textarea
+                  value={includedFeatures}
+                  onChange={(e) => setIncludedFeatures(e.target.value)}
+                  placeholder="Ex: Desengorduramento profundo
+Limpeza do vidro interior
+Garantia R&R"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] h-24 bg-slate-50 font-medium resize-none"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Cada linha aparecerá com um visto (✓) no portal do cliente.</p>
+              </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Descrição</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Ex: Remoção profunda de gordura incrustada e resíduos queimados..."
-                  className="w-full px-4 py-3.5 sm:py-3 border border-slate-300 rounded-xl text-base sm:text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] h-24 bg-slate-50"
+                  placeholder="Ex: Remoção profunda de gordura..."
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] h-20 bg-slate-50 font-medium resize-none"
                 />
               </div>
 
@@ -336,14 +354,14 @@ export default function ExtrasCatalogPage() {
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="w-full sm:w-auto px-4 py-3 sm:py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition text-center cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition text-center cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full sm:w-auto px-6 py-3.5 sm:py-2.5 bg-[#0B192C] text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition disabled:opacity-50 text-center shadow cursor-pointer"
+                  className="w-full sm:w-auto px-6 py-2.5 bg-[#0B192C] text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition disabled:opacity-50 text-center shadow cursor-pointer"
                 >
                   {submitting ? 'A guardar...' : editingService ? 'Guardar Alterações' : 'Criar Serviço'}
                 </button>
@@ -352,7 +370,6 @@ export default function ExtrasCatalogPage() {
           </div>
         </div>
       )}
-
     </main>
   )
 }

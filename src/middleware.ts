@@ -39,6 +39,8 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
+  const userEmail = user.email?.toLowerCase() || ''
+
   const { data: profile, error: profileError } = await supabase
     .from('clients')
     .select('role')
@@ -51,21 +53,22 @@ export async function middleware(request: NextRequest) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  // Fail closed: a worker must have an active, explicitly provisioned profile.
-  const role = !profileError && profile?.role === 'admin'
+  // BLINDAGEM: Se for o seu e-mail de admin, força o papel de admin independentemente da tabela
+  const role = userEmail === 'rrservices.pt@gmail.com' || (!profileError && profile?.role === 'admin')
     ? 'admin'
     : !workerError && workerProfile?.active
       ? 'worker'
       : 'client'
+
   if (adminRoute && role !== 'admin') {
     const url = request.nextUrl.clone()
-    url.pathname = role === 'worker' ? '/trabalhador/agenda' : '/cliente'
+    url.pathname = role === 'worker' ? '/trabalhador' : '/cliente'
     url.search = ''
     return NextResponse.redirect(url)
   }
   if (clientRoute && role !== 'client') {
     const url = request.nextUrl.clone()
-    url.pathname = role === 'admin' ? '/admin' : '/trabalhador/agenda'
+    url.pathname = role === 'admin' ? '/admin' : '/trabalhador'
     url.search = ''
     return NextResponse.redirect(url)
   }
@@ -77,7 +80,7 @@ export async function middleware(request: NextRequest) {
   }
   if (loginRoute && !forceLogin) {
     const url = request.nextUrl.clone()
-    url.pathname = role === 'admin' ? '/admin' : role === 'worker' ? '/trabalhador/agenda' : '/cliente'
+    url.pathname = role === 'admin' ? '/admin' : role === 'worker' ? '/trabalhador' : '/cliente'
     url.search = ''
     return NextResponse.redirect(url)
   }

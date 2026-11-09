@@ -1,11 +1,53 @@
-"use client";
+'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
-import QuoteAssistant from './QuoteAssistant';
+import { supabase } from '@/lib/supabase';
 
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Estados do formulário de captura de leads da Landing Page
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [serviceType, setServiceType] = useState('Limpeza Residencial');
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+
+    try {
+      // 1. Regista o cliente na tabela clients
+      const { data: clientData, error: clientError } = await supabase
+        .from('clients')
+        .insert([{ name, phone, address }])
+        .select('id')
+        .single();
+
+      if (clientError) throw clientError;
+
+      // 2. Cria automaticamente uma ordem/lead na tabela orders para o CRM do admin
+      if (clientData) {
+        await supabase.from('orders').insert([{
+          client_id: clientData.id,
+          service_type: serviceType,
+          scheduled_date: new Date(Date.now() + 86400000).toISOString(), // Amanhã por defeito
+          total_amount: 60.00,
+          status: 'pending',
+          notes: 'Lead gerada via Landing Page da página principal'
+        }]);
+      }
+
+      setSuccess(true);
+    } catch (err: any) {
+      alert('Erro ao enviar pedido: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-[#0B192C] font-sans scroll-smooth">
@@ -22,20 +64,28 @@ export default function Home() {
         {/* Links Desktop */}
         <nav className="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-300">
           <a href="#servicos" className="hover:text-[#00D4FF] transition">Serviços</a>
-          <a href="#simulador" className="hover:text-[#00D4FF] transition">Assistente de Serviços</a>
+          <a href="#orcamento" className="hover:text-[#00D4FF] transition">Pedir Orçamento</a>
           <a href="#como-funciona" className="hover:text-[#00D4FF] transition">Como Funciona</a>
           <a href="#faq" className="hover:text-[#00D4FF] transition">FAQ</a>
           <a href="#contactos" className="hover:text-[#00D4FF] transition">Contactos</a>
         </nav>
 
-        {/* Botão Acesso Área do Cliente */}
+        {/* Botões Ação Header */}
         <div className="hidden md:flex items-center space-x-4">
           <Link
             href="/login?next=%2Fcliente&force=1"
+            className="text-sm font-semibold bg-slate-800 border border-slate-700 text-white px-4 py-2 rounded-xl hover:bg-slate-700 transition"
+          >
+            🔒 Área do Cliente
+          </Link>
+          <a
+            href="https://wa.me/351969177571"
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-sm font-semibold bg-[#00D4FF] text-[#0B192C] px-5 py-2.5 rounded-xl hover:bg-[#00bfe6] transition shadow-md"
           >
-            Área do Cliente
-          </Link>
+            💬 WhatsApp
+          </a>
         </div>
 
         {/* Botão Menu Mobile */}
@@ -58,63 +108,133 @@ export default function Home() {
       {mobileMenuOpen && (
         <div className="md:hidden bg-[#0B192C] border-b border-slate-800 px-6 py-4 flex flex-col space-y-4 text-slate-200 font-medium text-sm">
           <a href="#servicos" onClick={() => setMobileMenuOpen(false)}>Serviços</a>
-          <a href="#simulador" onClick={() => setMobileMenuOpen(false)}>Assistente de Serviços</a>
+          <a href="#orcamento" onClick={() => setMobileMenuOpen(false)}>Pedir Orçamento</a>
           <a href="#como-funciona" onClick={() => setMobileMenuOpen(false)}>Como Funciona</a>
           <a href="#faq" onClick={() => setMobileMenuOpen(false)}>FAQ</a>
           <a href="#contactos" onClick={() => setMobileMenuOpen(false)}>Contactos</a>
           <Link
             href="/login?next=%2Fcliente&force=1"
             onClick={() => setMobileMenuOpen(false)}
+            className="text-center font-semibold bg-slate-800 border border-slate-700 text-white py-2.5 rounded-xl"
+          >
+            🔒 Área do Cliente
+          </Link>
+          <a
+            href="https://wa.me/351969177571"
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-center font-semibold bg-[#00D4FF] text-[#0B192C] py-2.5 rounded-xl"
           >
-            Área do Cliente
-          </Link>
+            💬 WhatsApp
+          </a>
         </div>
       )}
 
-      {/* 2. SECÇÃO PRINCIPAL (HERO) */}
-      <section className="relative bg-white py-16 md:py-24 px-6 md:px-12 border-b border-slate-200">
+      {/* 2. SECÇÃO PRINCIPAL (HERO + FORMULÁRIO DE CAPTURA) */}
+      <section className="relative bg-[#081426] text-white py-16 md:py-24 px-6 md:px-12 border-b border-slate-800">
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          <div>
-            <div className="inline-block bg-[#00D4FF]/10 text-[#0B192C] px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider mb-6 border border-[#00D4FF]/30">
-              Serviços Profissionais de Limpeza em Portugal
+          <div className="space-y-6">
+            <div className="inline-block bg-[#00D4FF]/10 text-[#00D4FF] px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border border-[#00D4FF]/30">
+              ✨ Serviços Profissionais de Limpeza em Portugal
             </div>
             
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-[#0B192C] leading-tight mb-6">
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-tight">
               O seu espaço merece um <br className="hidden sm:inline" />
               <span className="text-[#00D4FF]">cuidado ao detalhe.</span>
             </h1>
 
-            <p className="text-lg text-slate-600 leading-relaxed mb-8 max-w-xl">
+            <p className="text-lg text-slate-300 leading-relaxed max-w-xl">
               Limpeza residencial, profunda, pós-obra e higienização de estofos com profissionalismo, transparência e atenção a cada detalhe.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4">
-              <a
-                href="#simulador"
-                className="bg-[#0B192C] text-white font-semibold py-3.5 px-8 rounded-xl shadow-lg hover:bg-slate-800 transition text-center"
-              >
-                Pedir Orçamento
-              </a>
-              <a
-                href="#servicos"
-                className="bg-white text-[#0B192C] font-semibold py-3.5 px-8 rounded-xl border border-slate-300 hover:border-[#00D4FF] hover:text-[#00D4FF] transition text-center shadow-sm"
-              >
-                Conhecer os Serviços
-              </a>
+            <div className="flex flex-wrap gap-4 text-xs font-semibold text-slate-300 pt-2">
+              <span className="flex items-center gap-1.5">✅ Equipa Profissional</span>
+              <span className="flex items-center gap-1.5">✅ Produtos Ecológicos</span>
+              <span className="flex items-center gap-1.5">✅ Orçamento Rápido</span>
             </div>
           </div>
 
-          <div className="relative">
-            <div className="w-full h-[350px] md:h-[450px] bg-slate-200 rounded-3xl overflow-hidden shadow-2xl border border-slate-100 flex items-center justify-center relative">
-              {/* Imagem de Destaque */}
-              <img
-                src="https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=80"
-                alt="Equipa de limpeza profissional da R&R Services"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0B192C]/40 to-transparent" />
+          {/* FORMULÁRIO DE CAPTURA DIRETA DE LEADS */}
+          <div id="orcamento" className="bg-[#0B192C] border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-2xl relative">
+            <div className="absolute -top-3 right-6 bg-[#00D4FF] text-[#0B192C] font-extrabold text-[10px] px-3 py-1 rounded-full uppercase">
+              Resposta em 15 min
             </div>
+
+            <h2 className="text-xl font-extrabold text-white mb-2">Pedir Orçamento Grátis</h2>
+            <p className="text-slate-400 text-xs mb-6">Preencha os dados e a nossa equipa entrará em contacto.</p>
+
+            {success ? (
+              <div className="bg-emerald-950 border border-emerald-500/50 p-6 rounded-2xl text-center space-y-3">
+                <span className="text-3xl">🎉</span>
+                <h3 className="text-base font-bold text-emerald-300">Pedido enviado com sucesso!</h3>
+                <p className="text-xs text-emerald-400">Obrigado! O seu pedido foi registado no sistema e entraremos em contacto brevemente.</p>
+                <button 
+                  onClick={() => setSuccess(false)}
+                  className="mt-4 text-xs bg-slate-800 text-white px-4 py-2 rounded-xl font-bold hover:bg-slate-700 transition cursor-pointer"
+                >
+                  Fazer outro pedido
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-300 mb-1">Nome Completo *</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={name} 
+                    onChange={e => setName(e.target.value)} 
+                    placeholder="O seu nome" 
+                    className="w-full px-4 py-3 bg-[#081426] border border-slate-700 rounded-xl text-sm text-white outline-none focus:border-[#00D4FF]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-300 mb-1">Telemóvel *</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={phone} 
+                    onChange={e => setPhone(e.target.value)} 
+                    placeholder="912 345 678" 
+                    className="w-full px-4 py-3 bg-[#081426] border border-slate-700 rounded-xl text-sm text-white outline-none focus:border-[#00D4FF]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-300 mb-1">Tipo de Serviço *</label>
+                  <select 
+                    value={serviceType} 
+                    onChange={e => setServiceType(e.target.value)}
+                    className="w-full px-4 py-3 bg-[#081426] border border-slate-700 rounded-xl text-sm text-white outline-none focus:border-[#00D4FF]"
+                  >
+                    <option value="Limpeza Residencial">Limpeza Residencial</option>
+                    <option value="Limpeza Comercial / Escritórios">Limpeza Comercial / Escritórios</option>
+                    <option value="Limpeza Profunda / Pós-Obra">Limpeza Profunda / Pós-Obra</option>
+                    <option value="Higienização de Estofados">Higienização de Estofados</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-300 mb-1">Morada / Localidade</label>
+                  <input 
+                    type="text" 
+                    value={address} 
+                    onChange={e => setAddress(e.target.value)} 
+                    placeholder="Ex: Setúbal ou Lisboa" 
+                    className="w-full px-4 py-3 bg-[#081426] border border-slate-700 rounded-xl text-sm text-white outline-none focus:border-[#00D4FF]"
+                  />
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={submitting}
+                  className="w-full py-3.5 bg-[#00D4FF] hover:bg-[#00c2ea] text-[#0B192C] font-extrabold rounded-xl text-sm transition shadow-lg cursor-pointer disabled:opacity-50 mt-2"
+                >
+                  {submitting ? 'A enviar pedido...' : 'Solicitar Orçamento Agora'}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       </section>
@@ -144,7 +264,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="p-6 pt-0">
-                <a href="#simulador" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
+                <a href="#orcamento" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
                   Pedir Orçamento
                 </a>
               </div>
@@ -166,7 +286,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="p-6 pt-0">
-                <a href="#simulador" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
+                <a href="#orcamento" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
                   Pedir Orçamento
                 </a>
               </div>
@@ -188,7 +308,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="p-6 pt-0">
-                <a href="#simulador" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
+                <a href="#orcamento" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
                   Pedir Orçamento
                 </a>
               </div>
@@ -210,7 +330,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="p-6 pt-0">
-                <a href="#simulador" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
+                <a href="#orcamento" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
                   Pedir Orçamento
                 </a>
               </div>
@@ -232,7 +352,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="p-6 pt-0">
-                <a href="#simulador" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
+                <a href="#orcamento" className="block text-center w-full py-2.5 rounded-lg border border-[#0B192C] text-[#0B192C] font-semibold text-sm hover:bg-[#0B192C] hover:text-white transition">
                   Pedir Orçamento
                 </a>
               </div>
@@ -241,61 +361,57 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 4. ASSISTENTE CONVERSACIONAL DE SERVIÇOS */}
-      <section id="simulador" className="border-y border-slate-200 bg-slate-50 px-4 py-16 sm:px-6 md:px-12 md:py-20">
-        <QuoteAssistant />
-      </section>
-      {/* 5. COMO FUNCIONA */}
-      <section id="como-funciona" className="py-20 px-6 md:px-12 bg-slate-50">
+      {/* 4. COMO FUNCIONA */}
+      <section id="como-funciona" className="py-20 px-6 md:px-12 bg-white border-t border-slate-200">
         <div className="max-w-5xl mx-auto text-center">
           <h2 className="text-3xl md:text-4xl font-bold text-[#0B192C] mb-12">Como Funciona a Contratação</h2>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm relative">
+            <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 shadow-sm relative">
               <div className="w-12 h-12 bg-[#00D4FF] text-[#0B192C] font-extrabold rounded-xl flex items-center justify-center mx-auto mb-6 text-xl">
                 1
               </div>
-              <h3 className="font-bold text-lg mb-2">Recomendação Conversacional</h3>
-              <p className="text-slate-600 text-sm">Responda ao assistente para receber uma recomendação e enviar os detalhes do seu espaço.</p>
+              <h3 className="font-bold text-lg mb-2">Pedido Rápido</h3>
+              <p className="text-slate-600 text-sm">Preencha o formulário com os seus dados básicos e escolha o serviço desejado.</p>
             </div>
 
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm relative">
+            <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 shadow-sm relative">
               <div className="w-12 h-12 bg-[#00D4FF] text-[#0B192C] font-extrabold rounded-xl flex items-center justify-center mx-auto mb-6 text-xl">
                 2
               </div>
               <h3 className="font-bold text-lg mb-2">Confirmação & Agendamento</h3>
-              <p className="text-slate-600 text-sm">Analisamos a proposta, confirmamos o valor final e agendamos a data de execução com total conveniência.</p>
+              <p className="text-slate-600 text-sm">Entramos em contacto, confirmamos os detalhes e agendamos a data de execução.</p>
             </div>
 
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm relative">
+            <div className="bg-slate-50 p-8 rounded-2xl border border-slate-200 shadow-sm relative">
               <div className="w-12 h-12 bg-[#00D4FF] text-[#0B192C] font-extrabold rounded-xl flex items-center justify-center mx-auto mb-6 text-xl">
                 3
               </div>
               <h3 className="font-bold text-lg mb-2">Execução com Rigor</h3>
-              <p className="text-slate-600 text-sm">A equipa R&R Services realiza o serviço com elevados padrões de qualidade e atenção a cada detalhe.</p>
+              <p className="text-slate-600 text-sm">A equipa R&R Services realiza o serviço com elevados padrões de qualidade.</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 6. PERGUNTAS FREQUENTES (FAQ) */}
-      <section id="faq" className="py-20 px-6 md:px-12 bg-white border-t border-slate-200">
+      {/* 5. PERGUNTAS FREQUENTES (FAQ) */}
+      <section id="faq" className="py-20 px-6 md:px-12 bg-slate-50 border-t border-slate-200">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold text-center text-[#0B192C] mb-12">Perguntas Frequentes</h2>
           <div className="space-y-6">
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200">
               <h3 className="font-bold text-lg text-[#0B192C] mb-2">É necessário fornecer os produtos e utensílios de limpeza?</h3>
               <p className="text-slate-600 text-sm">A equipa R&R Services pode levar todos os produtos e equipamentos profissionais necessários para a execução do serviço, garantindo a máxima eficácia.</p>
             </div>
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200">
               <h3 className="font-bold text-lg text-[#0B192C] mb-2">Como posso acompanhar as minhas marcações e orçamentos?</h3>
-              <p className="text-slate-600 text-sm">Basta aceder à <Link href="/login?next=%2Fcliente&force=1" className="text-[#00D4FF] font-semibold underline">Área do Cliente</Link> para consultar o histórico, ver o estado das suas solicitações e solicitar novos serviços extra.</p>
+              <p className="text-slate-600 text-sm">Basta aceder à <Link href="/login?next=%2Fcliente&force=1" className="text-[#00D4FF] font-semibold underline">Área do Cliente</Link> para consultar o histórico, ver o estado das suas solicitações e gerir os serviços.</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 7. RODAPÉ */}
+      {/* 6. RODAPÉ */}
       <footer id="contactos" className="bg-[#0B192C] text-white py-12 px-6 md:px-12 border-t border-slate-800">
         <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
           <div>
@@ -312,22 +428,20 @@ export default function Home() {
             <h4 className="font-bold text-sm text-[#00D4FF] uppercase tracking-wider mb-4">Navegação</h4>
             <ul className="space-y-2 text-sm text-slate-300">
               <li><a href="#servicos" className="hover:text-white transition">Serviços</a></li>
-              <li><a href="#simulador" className="hover:text-white transition">Assistente de Serviços</a></li>
+              <li><a href="#orcamento" className="hover:text-white transition">Pedir Orçamento</a></li>
               <li><Link href="/login?next=%2Fcliente&force=1" className="hover:text-white transition">Área de Clientes</Link></li>
-              <li><Link href="/privacidade" className="hover:text-white transition">Política de Privacidade</Link></li>
-              <li><Link href="/termos" className="hover:text-white transition">Termos e Condições</Link></li>
             </ul>
           </div>
 
           <div>
             <h4 className="font-bold text-sm text-[#00D4FF] uppercase tracking-wider mb-4">Área de Atendimento</h4>
-            <p className="text-slate-300 text-sm mb-2">Portugal (Lisboa, Margem Sul e Regiões Metropolitanas)</p>
+            <p className="text-slate-300 text-sm mb-2">Portugal (Setúbal, Lisboa e Regiões Metropolitanas)</p>
             <p className="text-xs text-slate-400">Fuso horário: Europe/Lisbon | Moeda: € (EUR)</p>
           </div>
         </div>
 
         <div className="max-w-6xl mx-auto pt-6 border-t border-slate-800 text-center text-xs text-slate-500">
-          © 2026 R&R Services. Todos os direitos reservados.
+          © {new Date().getFullYear()} R&R Services. Todos os direitos reservados.
         </div>
       </footer>
 

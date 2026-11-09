@@ -13,6 +13,7 @@ const linksMenu = [
   { href: '/admin/servicos', label: 'Agenda & Equipas', short: 'Agenda', icone: '📅' },
   { href: '/admin/loja', label: 'Loja & Stock', short: 'Loja', icone: '🛒' },
   { href: '/admin/extras', label: 'Catálogo de Extras', short: 'Extras', icone: '✨' }, // 👈 Adicionado aqui
+  { href: '/admin/configuracoes', label: 'Configurações & Contexto', short: 'Configurações', icone: '⚙️' }
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

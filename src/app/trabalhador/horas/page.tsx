@@ -70,6 +70,7 @@ export default function WorkerHoursPage() {
     const initialize = window.setTimeout(() => setMonth(localMonth()), 0)
     return () => window.clearTimeout(initialize)
   }, [])
+
   useEffect(() => {
     if (!month) return
     const request = window.setTimeout(() => { void loadHours(month) }, 0)
@@ -82,26 +83,192 @@ export default function WorkerHoursPage() {
     return { minutes, average: workDays ? Math.round(minutes / workDays) : 0, workDays }
   }, [rows])
 
-  return <div className="min-h-dvh overflow-x-hidden bg-[#F3F6FA] text-[#0B192C]">
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#081426]/95 text-white shadow-xl backdrop-blur-xl"><div className="mx-auto flex max-w-[1500px] items-center justify-between px-4 py-3 sm:px-6 lg:px-8"><Link href="/trabalhador/agenda" className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#00D4FF] text-sm font-black text-[#0B192C]">R&amp;R</span><span><span className="block text-sm font-extrabold tracking-wide">R&amp;R SERVICES</span><span className="block text-[10px] uppercase tracking-[0.2em] text-slate-400">Portal do trabalhador</span></span></Link><span className="hidden text-sm text-slate-300 sm:block">{workerName}</span></div></header>
-    <main className="mx-auto max-w-[1500px] pb-32 lg:grid lg:grid-cols-[245px_minmax(0,1fr)]">
-      <aside className="hidden border-r border-slate-200/80 bg-white/70 px-4 py-7 lg:block"><nav aria-label="Área de trabalho" className="space-y-1"><Link href="/trabalhador/agenda" className="flex min-h-12 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold text-slate-600 hover:bg-slate-100"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">▦</span>Agenda de hoje</Link><Link href="/trabalhador/horas" aria-current="page" className="flex min-h-12 items-center gap-3 rounded-xl bg-[#0B192C] px-3 text-[13px] font-semibold text-white"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#00D4FF] text-[#0B192C]">◷</span>Horas trabalhadas</Link><Link href="/trabalhador/perfil" className="flex min-h-12 items-center gap-3 rounded-xl px-3 text-[13px] font-semibold text-slate-600 hover:bg-slate-100"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100">◎</span>Segurança</Link></nav></aside>
-      <section className="min-w-0 px-4 pt-6 sm:px-6 sm:pt-8 lg:px-8 lg:py-9">
-        <div className="relative isolate overflow-hidden rounded-[28px] bg-[#0B192C] p-6 text-white shadow-xl sm:p-8 lg:p-10"><div className="absolute -right-12 -top-20 -z-10 h-64 w-64 rounded-full bg-[#00D4FF]/15 blur-3xl"/><div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#70E8FF]">Resumo operacional</p><h1 className="mt-3 text-2xl font-black sm:text-3xl">Horas trabalhadas</h1><p className="mt-2 text-sm text-slate-300">Histórico de serviços concluídos{workerName ? ` · ${workerName}` : ''}</p></div><label className="block"><span className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Mês de referência</span><input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="min-h-12 rounded-xl border border-white/15 bg-white/10 px-3 text-sm font-bold text-white outline-none focus:border-[#00D4FF] focus:ring-2 focus:ring-[#00D4FF]/30 [color-scheme:dark]" /></label></div>
-          <div className="mt-7 grid gap-3 border-t border-white/10 pt-5 sm:grid-cols-3"><Metric label="Total no mês" value={formatDuration(totals.minutes)} icon="◷"/><Metric label="Média por dia trabalhado" value={formatDuration(totals.average)} icon="▤"/><Metric label="Dias com serviço" value={String(totals.workDays)} icon="▦"/></div>
+  return (
+    <div className="min-h-screen bg-[#F3F6FA] text-[#0B192C]">
+      {/* Header Superior Moderno */}
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#081426]/90 backdrop-blur-xl text-white shadow-lg">
+        <div className="mx-auto flex max-w-[1550px] items-center justify-between px-6 py-4 lg:px-10">
+          <Link href="/trabalhador" className="flex items-center gap-3.5 group">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00D4FF] text-sm font-black text-[#0B192C] shadow-lg shadow-[#00D4FF]/20 group-hover:scale-105 transition">R&R</span>
+            <div>
+              <span className="block text-sm font-black tracking-wider">R&R SERVICES</span>
+              <span className="block text-[10px] font-bold uppercase tracking-[0.25em] text-[#00D4FF]">Portal do Trabalhador</span>
+            </div>
+          </Link>
+          <div className="flex items-center gap-4">
+            <span className="hidden text-xs font-semibold text-slate-300 sm:block bg-white/[0.06] px-3.5 py-2 rounded-xl border border-white/5">👤 {workerName}</span>
+          </div>
         </div>
-        {error && <p role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{error}</p>}
-        <div className="mt-8 flex items-end justify-between gap-3"><div><p className="text-xs font-extrabold uppercase tracking-[0.15em] text-sky-700">Registos</p><h2 className="mt-1 text-xl font-black">Limpezas concluídas</h2></div><span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600">{rows.length} serviços</span></div>
-        <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="space-y-3 p-3 md:hidden">{loading ? <p className="p-6 text-center text-sm text-slate-500">A carregar horas...</p> : rows.length === 0 ? <p className="p-6 text-center text-sm text-slate-500">Sem serviços concluídos neste mês.</p> : rows.map((row) => <article key={row.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4"><div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-extrabold">{row.service_type}</h3><p className="mt-1 text-xs capitalize text-slate-500">{dateLabel(row.completed_at ?? row.scheduled_date)}</p></div><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-extrabold text-emerald-800">{formatDuration(minutesFor(row))}</span></div><div className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-200 pt-3 text-xs"><p className="text-slate-500">Início <strong className="ml-1 text-slate-800">{timeLabel(row.started_at)}</strong></p><p className="text-slate-500">Término <strong className="ml-1 text-slate-800">{timeLabel(row.completed_at)}</strong></p></div></article>)}</div>
-          <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[700px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-[10px] font-extrabold uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-4">Data</th><th className="px-5 py-4">Serviço</th><th className="px-5 py-4">Início</th><th className="px-5 py-4">Término</th><th className="px-5 py-4 text-right">Duração</th></tr></thead><tbody className="divide-y divide-slate-100">{loading ? <tr><td colSpan={5} className="p-10 text-center text-slate-500">A carregar horas...</td></tr> : rows.length === 0 ? <tr><td colSpan={5} className="p-10 text-center text-slate-500">Sem serviços concluídos neste mês.</td></tr> : rows.map((row) => <tr key={row.id} className="hover:bg-slate-50/70"><td className="px-5 py-4 capitalize text-slate-600">{dateLabel(row.completed_at ?? row.scheduled_date)}</td><td className="px-5 py-4 font-semibold text-[#0B192C]">{row.service_type}</td><td className="px-5 py-4 text-slate-600">{timeLabel(row.started_at)}</td><td className="px-5 py-4 text-slate-600">{timeLabel(row.completed_at)}</td><td className="px-5 py-4 text-right font-extrabold text-emerald-800">{formatDuration(minutesFor(row))}</td></tr>)}</tbody></table></div>
-        </section>
-      </section>
-    </main>
-    <nav aria-label="Navegação do trabalhador" className="fixed inset-x-3 bottom-[max(env(safe-area-inset-bottom),0.75rem)] z-40 grid grid-cols-3 gap-1 rounded-2xl border border-slate-200/80 bg-white/95 p-2 shadow-[0_12px_40px_rgba(11,25,44,0.18)] backdrop-blur-xl lg:hidden"><Link href="/trabalhador/agenda" className="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-slate-500 transition hover:bg-slate-100"><span>▦</span><span className="text-[10px] font-bold">Agenda</span></Link><Link href="/trabalhador/horas" aria-current="page" className="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl bg-[#0B192C] text-[#00D4FF]"><span>◷</span><span className="text-[10px] font-extrabold">Horas</span></Link><Link href="/trabalhador/perfil" className="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-slate-500 transition hover:bg-slate-100"><span>◎</span><span className="text-[10px] font-bold">Segurança</span></Link></nav>
-  </div>
+      </header>
+
+      <div className="mx-auto grid max-w-[1550px] lg:grid-cols-[270px_minmax(0,1fr)]">
+        {/* Sidebar Moderna */}
+        <aside className="hidden border-r border-slate-200/80 bg-white/85 backdrop-blur-md px-5 py-8 lg:block min-h-[calc(100vh-5rem)]">
+          <p className="px-3 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Navegação</p>
+          <nav aria-label="Área de trabalho" className="mt-4 space-y-2">
+            <Link href="/trabalhador" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-500">🏠</span>Início (Dashboard)
+            </Link>
+            <Link href="/trabalhador/agenda" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-500">📅</span>Agenda de hoje
+            </Link>
+            <Link href="/trabalhador/horas" aria-current="page" className="flex h-12 items-center gap-3.5 rounded-2xl bg-[#0B192C] px-4 text-xs font-bold text-white shadow-xl shadow-[#0B192C]/15">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-[#00D4FF] text-[#0B192C] text-xs font-black">⏱️</span>Horas trabalhadas
+              <span className="ml-auto h-2 w-2 rounded-full bg-[#00D4FF]" />
+            </Link>
+            <Link href="/trabalhador/perfil" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-500">🔒</span>Segurança / Perfil
+            </Link>
+          </nav>
+          
+          <div className="mt-12 rounded-3xl bg-gradient-to-br from-[#0B192C] to-[#173957] p-5 text-white shadow-xl relative overflow-hidden">
+            <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-[#00D4FF]/10 blur-xl" />
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00D4FF] text-sm text-[#0B192C] font-black">✦</span>
+            <p className="mt-4 text-xs font-black tracking-wide">Controlo de ponto</p>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-300">Acompanhe o acumulado de horas e o histórico detalhado mensal.</p>
+          </div>
+          <p className="mt-10 px-3 text-[10px] font-semibold text-slate-400">© 2026 R&R Services</p>
+        </aside>
+
+        {/* Conteúdo Principal */}
+        <main className="min-w-0 px-6 pb-28 pt-8 sm:px-10 lg:px-12 space-y-8">
+          {/* Banner de Resumo Operacional */}
+          <section className="relative isolate overflow-hidden rounded-[32px] bg-[#0B192C] p-8 text-white shadow-2xl sm:p-10">
+            <div className="absolute -right-16 -top-28 -z-10 h-80 w-80 rounded-full bg-[#00D4FF]/15 blur-3xl pointer-events-none" />
+            
+            <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
+              <div>
+                <span className="inline-flex items-center gap-2 rounded-full border border-[#00D4FF]/30 bg-[#00D4FF]/10 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-[#70E8FF]">
+                  <span className="h-2 w-2 rounded-full bg-[#00D4FF] animate-pulse" /> Registo de Ponto
+                </span>
+                <h1 className="mt-5 text-3xl font-black tracking-tight sm:text-4xl">Horas Trabalhadas</h1>
+                <p className="mt-2 text-sm text-slate-300">Histórico de serviços concluídos{workerName ? ` · ${workerName}` : ''}</p>
+              </div>
+
+              {/* Seletor de Mês Moderno */}
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-black uppercase tracking-wider text-slate-400">Mês de referência</span>
+                <input
+                  type="month"
+                  value={month}
+                  onChange={(event) => setMonth(event.target.value)}
+                  className="h-12 rounded-2xl border border-white/20 bg-white/10 px-4 text-xs font-bold text-white outline-none focus:border-[#00D4FF] focus:ring-2 focus:ring-[#00D4FF]/30 [color-scheme:dark] shadow-inner"
+                />
+              </label>
+            </div>
+
+            {/* Cartões de Métricas */}
+            <div className="mt-8 grid gap-4 border-t border-white/10 pt-6 sm:grid-cols-3">
+              <Metric label="Total no mês" value={formatDuration(totals.minutes)} icon="⏱️" />
+              <Metric label="Média por dia trabalhado" value={formatDuration(totals.average)} icon="📊" />
+              <Metric label="Dias com serviço" value={String(totals.workDays)} icon="📅" />
+            </div>
+          </section>
+
+          {error && <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs font-bold text-rose-700 shadow-sm">{error}</p>}
+
+          <div className="flex items-end justify-between gap-3 pt-2">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#00D4FF]">Registos</p>
+              <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Limpezas concluídas</h2>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-bold text-slate-700 shadow-xs">{rows.length} serviços</span>
+          </div>
+
+          {/* Listagem (Mobile Cards / Desktop Table) */}
+          <section className="rounded-[32px] border border-slate-200/80 bg-white shadow-sm overflow-hidden p-2 sm:p-4">
+            {/* Vista Mobile (Cartões) */}
+            <div className="space-y-3 md:hidden p-2">
+              {loading ? (
+                <p className="p-8 text-center text-xs font-bold text-slate-400">A carregar horas...</p>
+              ) : rows.length === 0 ? (
+                <div className="p-8 text-center">
+                  <span className="text-3xl mb-2 block">📭</span>
+                  <p className="text-xs font-extrabold text-slate-700">Sem serviços concluídos neste mês.</p>
+                </div>
+              ) : (
+                rows.map((row) => (
+                  <article key={row.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-5 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-xs font-black text-slate-900">{row.service_type}</h3>
+                        <p className="mt-1 text-[11px] font-semibold capitalize text-slate-500">{dateLabel(row.completed_at ?? row.scheduled_date)}</p>
+                      </div>
+                      <span className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-black text-emerald-800">
+                        {formatDuration(minutesFor(row))}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 border-t border-slate-200/60 pt-3 text-xs">
+                      <p className="text-slate-500">Início: <strong className="text-slate-800 font-bold">{timeLabel(row.started_at)}</strong></p>
+                      <p className="text-slate-500">Término: <strong className="text-slate-800 font-bold">{timeLabel(row.completed_at)}</strong></p>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+
+            {/* Vista Desktop (Tabela Refinada) */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[700px] text-left text-xs">
+                <thead className="border-b border-slate-200/80 bg-slate-50/80 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-6 py-4">Data</th>
+                    <th className="px-6 py-4">Serviço</th>
+                    <th className="px-6 py-4">Início</th>
+                    <th className="px-6 py-4">Término</th>
+                    <th className="px-6 py-4 text-right">Duração</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                  {loading ? (
+                    <tr><td colSpan={5} className="p-12 text-center text-slate-400 font-bold">A carregar horas...</td></tr>
+                  ) : rows.length === 0 ? (
+                    <tr><td colSpan={5} className="p-12 text-center text-slate-500">Sem serviços concluídos neste mês.</td></tr>
+                  ) : (
+                    rows.map((row) => (
+                      <tr key={row.id} className="hover:bg-slate-50/70 transition">
+                        <td className="px-6 py-4 capitalize text-slate-500">{dateLabel(row.completed_at ?? row.scheduled_date)}</td>
+                        <td className="px-6 py-4 font-black text-[#0B192C]">{row.service_type}</td>
+                        <td className="px-6 py-4 text-slate-600 font-mono">{timeLabel(row.started_at)}</td>
+                        <td className="px-6 py-4 text-slate-600 font-mono">{timeLabel(row.completed_at)}</td>
+                        <td className="px-6 py-4 text-right font-black text-emerald-700 font-mono text-sm">{formatDuration(minutesFor(row))}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      {/* Barra de Navegação Móvel Inferior (Bottom Nav) */}
+      <nav aria-label="Navegação do trabalhador" className="fixed inset-x-4 bottom-4 z-40 grid grid-cols-3 gap-1.5 rounded-2xl border border-slate-200/80 bg-white/95 p-2 shadow-2xl backdrop-blur-xl lg:hidden">
+        <Link href="/trabalhador/agenda" className="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-slate-500 transition hover:bg-slate-100 font-bold">
+          <span className="text-base">📅</span>
+          <span className="text-[10px]">Agenda</span>
+        </Link>
+        <Link href="/trabalhador/horas" aria-current="page" className="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl bg-[#0B192C] text-[#00D4FF] shadow-md">
+          <span className="text-base">⏱️</span>
+          <span className="text-[10px] font-black">Horas</span>
+        </Link>
+        <Link href="/trabalhador/perfil" className="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-slate-500 transition hover:bg-slate-100 font-bold">
+          <span className="text-base">🔒</span>
+          <span className="text-[10px]">Segurança</span>
+        </Link>
+      </nav>
+    </div>
+  )
 }
 
 function Metric({ label, value, icon }: { label: string; value: string; icon: string }) {
-  return <div className="flex min-w-0 items-center gap-3 rounded-xl bg-white/[0.06] p-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF]">{icon}</span><div className="min-w-0"><p className="text-[10px] uppercase tracking-wider text-slate-400">{label}</p><p className="mt-1 truncate text-lg font-black text-white">{value}</p></div></div>
+  return (
+    <div className="flex items-center gap-4 bg-white/[0.05] backdrop-blur-md p-4 rounded-2xl border border-white/10 shadow-md">
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF] text-lg font-black">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+        <p className="mt-0.5 truncate text-lg font-black text-white">{value}</p>
+      </div>
+    </div>
+  )
 }

@@ -9,6 +9,9 @@ export interface Client {
   phone: string
   email: string | null
   address?: string
+  floor_details?: string | null
+  notes?: string | null
+  source_channel?: string | null
   auth_user_id?: string | null
   latitude?: number | null
   longitude?: number | null
@@ -36,8 +39,11 @@ export default function ClientsPage() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [address, setAddress] = useState('')
-  const [latitude, setLatitude] = useState('')
-  const [longitude, setLongitude] = useState('')
+  const [floorDetails, setFloorDetails] = useState('')
+  const [clientNotes, setClientNotes] = useState('')
+  const [sourceChannel, setSourceChannel] = useState('WhatsApp')
+  const [latitude, setLatitude] = useState<number | null>(null)
+  const [longitude, setLongitude] = useState<number | null>(null)
   const [paymentTerms, setPaymentTerms] = useState<string>('per_service')
   const [submitting, setSubmitting] = useState(false)
 
@@ -60,16 +66,16 @@ export default function ClientsPage() {
     if (data) setClientOrders(data as ClientOrder[])
   }
 
-  // Função para procurar coordenadas automaticamente pela morada
-  async function handleGeocodeAddress() {
-    if (!address || address.trim().length < 5) {
-      alert('Por favor, introduza uma morada válida antes de procurar as coordenadas.')
+  // Função para procurar coordenadas automaticamente pela morada limpa (sem o andar)
+  async function handleGeocodeAddress(streetAddress: string) {
+    if (!streetAddress || streetAddress.trim().length < 5) {
+      alert('Por favor, introduza uma morada válida (rua e número) antes de procurar as coordenadas.')
       return
     }
 
     setGeocoding(true)
     try {
-      const query = encodeURIComponent(`${address}, Portugal`)
+      const query = encodeURIComponent(`${streetAddress}, Portugal`)
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`,
         {
@@ -83,11 +89,13 @@ export default function ClientsPage() {
       const data = await response.json()
 
       if (data && data.length > 0) {
-        setLatitude(data[0].lat)
-        setLongitude(data[0].lon)
-        alert(`Coordenadas obtidas com sucesso!\nLatitude: ${data[0].lat}\nLongitude: ${data[0].lon}`)
+        setLatitude(Number(data[0].lat))
+        setLongitude(Number(data[0].lon))
+        alert(`Coordenadas de GPS obtidas com sucesso!\nLatitude: ${data[0].lat}\nLongitude: ${data[0].lon}`)
       } else {
-        alert('Não foi possível encontrar as coordenadas exatas para esta morada. Verifique se o nome da rua e localidade estão corretos.')
+        setLatitude(null)
+        setLongitude(null)
+        alert('Não foi possível encontrar as coordenadas exatas para esta morada. Verifique o nome da rua e localidade.')
       }
     } catch (error) {
       console.error('Erro ao procurar coordenadas:', error)
@@ -101,12 +109,6 @@ export default function ClientsPage() {
     e.preventDefault()
     setSubmitting(true)
 
-    const coordinates = parseCoordinates()
-    if (!coordinates) {
-      setSubmitting(false)
-      return
-    }
-
     const formattedEmail = email || `${phone.replace(/\s+/g, '')}@rrservices.pt`
 
     const { error } = await supabase.from('clients').insert([{ 
@@ -114,21 +116,19 @@ export default function ClientsPage() {
       phone, 
       email: formattedEmail, 
       address,
+      floor_details: floorDetails,
+      notes: clientNotes,
+      source_channel: sourceChannel,
       payment_terms: paymentTerms,
-      ...coordinates,
+      latitude,
+      longitude
     }])
     
     if (error) {
       alert('Erro ao criar cliente: ' + error.message)
     } else {
       setShowAddModal(false)
-      setName('')
-      setPhone('')
-      setEmail('')
-      setAddress('')
-      setLatitude('')
-      setLongitude('')
-      setPaymentTerms('per_service')
+      resetForm()
       fetchClients()
       alert('Cliente registado com sucesso!')
     }
@@ -141,8 +141,11 @@ export default function ClientsPage() {
     setPhone(client.phone)
     setEmail(client.email ?? '')
     setAddress(client.address || '')
-    setLatitude(client.latitude == null ? '' : String(client.latitude))
-    setLongitude(client.longitude == null ? '' : String(client.longitude))
+    setFloorDetails(client.floor_details || '')
+    setClientNotes(client.notes || '')
+    setSourceChannel(client.source_channel || 'WhatsApp')
+    setLatitude(client.latitude ?? null)
+    setLongitude(client.longitude ?? null)
     setPaymentTerms(client.payment_terms || 'per_service')
     setViewingClient(null)
   }
@@ -151,19 +154,19 @@ export default function ClientsPage() {
     e.preventDefault()
     if (!editingClient) return
     setSubmitting(true)
-    const coordinates = parseCoordinates()
-    if (!coordinates) {
-      setSubmitting(false)
-      return
-    }
+
     const formattedEmail = email || `${phone.replace(/\s+/g, '')}@rrservices.pt`
     const { error } = await supabase.from('clients').update({ 
       name, 
       phone, 
       email: formattedEmail, 
       address, 
+      floor_details: floorDetails,
+      notes: clientNotes,
+      source_channel: sourceChannel,
       payment_terms: paymentTerms,
-      ...coordinates 
+      latitude,
+      longitude
     }).eq('id', editingClient.id)
 
     if (error) {
@@ -175,44 +178,38 @@ export default function ClientsPage() {
         phone, 
         email: formattedEmail, 
         address, 
+        floor_details: floorDetails,
+        notes: clientNotes,
+        source_channel: sourceChannel,
         payment_terms: paymentTerms,
-        ...coordinates 
+        latitude,
+        longitude
       } : client).sort((a, b) => a.name.localeCompare(b.name, 'pt')))
       setEditingClient(null)
-      setName('')
-      setPhone('')
-      setEmail('')
-      setAddress('')
-      setLatitude('')
-      setLongitude('')
-      setPaymentTerms('per_service')
+      resetForm()
+      fetchClients()
       alert('Cliente atualizado com sucesso!')
     }
     setSubmitting(false)
   }
 
-  function closeClientForm() {
-    setShowAddModal(false)
-    setEditingClient(null)
+  function resetForm() {
     setName('')
     setPhone('')
     setEmail('')
     setAddress('')
-    setLatitude('')
-    setLongitude('')
+    setFloorDetails('')
+    setClientNotes('')
+    setSourceChannel('WhatsApp')
+    setLatitude(null)
+    setLongitude(null)
     setPaymentTerms('per_service')
   }
 
-  function parseCoordinates(): { latitude: number | null; longitude: number | null } | null {
-    const latitudeValue = latitude.trim() ? Number(latitude) : null
-    const longitudeValue = longitude.trim() ? Number(longitude) : null
-    if ((latitudeValue === null) !== (longitudeValue === null)
-      || (latitudeValue !== null && (!Number.isFinite(latitudeValue) || latitudeValue < -90 || latitudeValue > 90))
-      || (longitudeValue !== null && (!Number.isFinite(longitudeValue) || longitudeValue < -180 || longitudeValue > 180))) {
-      alert('Indique latitude e longitude válidas em conjunto, ou deixe ambos os campos vazios.')
-      return null
-    }
-    return { latitude: latitudeValue, longitude: longitudeValue }
+  function closeClientForm() {
+    setShowAddModal(false)
+    setEditingClient(null)
+    resetForm()
   }
 
   async function handleGerarAcessoWhatsApp(client: Client) {
@@ -238,17 +235,17 @@ export default function ClientsPage() {
       }
 
       if (!result.clientId || !result.userId || !result.phone || !result.loginEmail || !result.password) {
-        setAccessFeedback('A conta foi criada, mas a resposta veio incompleta. Contacte o suporte antes de repetir a operação.')
+        setAccessFeedback('A conta foi criada, mas a resposta veio incompleta.')
         return
       }
       const credentials = { clientId: result.clientId, phone: result.phone, loginEmail: result.loginEmail, password: result.password }
       setAccessCredentials(credentials)
-      setAccessFeedback('Acesso criado e vinculado. Copie as credenciais ou abra o WhatsApp para as enviar.')
+      setAccessFeedback('Acesso criado e vinculado com sucesso.')
       const linkedClient = { ...client, auth_user_id: result.userId }
       setClients((current) => current.map((item) => item.id === client.id ? linkedClient : item))
       setViewingClient(linkedClient)
     } catch {
-      setAccessFeedback('Ocorreu um erro de ligação ao gerar o acesso. Confirme se o cliente já recebeu credenciais antes de repetir.')
+      setAccessFeedback('Ocorreu um erro de ligação ao gerar o acesso.')
     } finally {
       setGerandoAcesso(false)
     }
@@ -264,7 +261,7 @@ export default function ClientsPage() {
       await navigator.clipboard.writeText(buildAccessMessage(accessCredentials, client))
       setAccessFeedback('Dados de acesso copiados.')
     } catch {
-      setAccessFeedback('Não foi possível copiar automaticamente. Selecione e copie os dados apresentados.')
+      setAccessFeedback('Não foi possível copiar automaticamente.')
     }
   }
 
@@ -316,7 +313,7 @@ export default function ClientsPage() {
             className="px-4 py-3 sm:py-2 border border-slate-300 rounded-xl bg-white text-sm sm:text-xs outline-none focus:ring-2 focus:ring-[#00D4FF] w-full sm:w-64"
           />
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => { resetForm(); setShowAddModal(true); }}
             className="bg-[#0B192C] text-white min-h-11 px-5 py-3 sm:py-2.5 rounded-xl font-bold text-xs hover:bg-slate-800 transition cursor-pointer shadow-sm text-center shrink-0"
           >
             + Novo Cliente
@@ -330,16 +327,24 @@ export default function ClientsPage() {
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">Nenhum cliente encontrado.</div>
         ) : filtered.map((client) => (
-          <article key={client.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <article key={client.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-2">
             <div className="min-w-0">
               <h2 className="truncate text-base font-bold text-[#0B192C]">{client.name}</h2>
               <a href={`tel:${client.phone.replace(/\s+/g, '')}`} className="mt-1 inline-flex min-h-10 items-center text-sm text-slate-600">{client.phone}</a>
               <p className="truncate text-sm text-slate-500">{client.email}</p>
-              <p className="mt-1 line-clamp-2 text-sm text-slate-500">{client.address || 'Sem morada'}</p>
+              <p className="mt-1 text-sm text-slate-500">{client.address || 'Sem morada'} {client.floor_details ? `(${client.floor_details})` : ''}</p>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button onClick={() => handleEditClient(client)} className="min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-700 transition hover:border-[#00D4FF] hover:bg-slate-50">✏️ Editar</button>
-              <button onClick={() => handleOpenView(client)} className="min-h-11 rounded-xl bg-cyan-50 px-3 text-sm font-bold text-[#0B192C] transition hover:bg-cyan-100">Ficha 360°</button>
+            <div className="pt-2 flex gap-2">
+              <a 
+                href={`https://wa.me/${client.phone.replace(/\D/g, '')}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex-1 min-h-10 flex items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 font-bold text-xs border border-emerald-200"
+              >
+                💬 WhatsApp
+              </a>
+              <button onClick={() => handleEditClient(client)} className="min-h-10 px-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-700">✏️ Editar</button>
+              <button onClick={() => handleOpenView(client)} className="min-h-10 px-3 rounded-xl bg-cyan-50 text-xs font-bold text-[#0B192C]">Ficha 360°</button>
             </div>
           </article>
         ))}
@@ -354,7 +359,7 @@ export default function ClientsPage() {
                 <th className="p-4">Nome</th>
                 <th className="p-4">Telemóvel</th>
                 <th className="p-4">E-mail</th>
-                <th className="p-4">Morada</th>
+                <th className="p-4">Morada (GPS / Andar)</th>
                 <th className="p-4">Condição Pagamento</th>
                 <th className="p-4 text-right">Ações</th>
               </tr>
@@ -368,9 +373,25 @@ export default function ClientsPage() {
                 filtered.map(c => (
                   <tr key={c.id} className="hover:bg-slate-50 transition">
                     <td className="p-4 font-bold text-[#0B192C]">{c.name}</td>
-                    <td className="p-4 text-slate-700">{c.phone}</td>
+                    <td className="p-4 text-slate-700">
+                      <div className="flex items-center gap-2">
+                        {c.phone}
+                        <a 
+                          href={`https://wa.me/${c.phone.replace(/\D/g, '')}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          title="Enviar mensagem direta via WhatsApp"
+                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 p-1.5 rounded-lg border border-emerald-200 text-xs transition"
+                        >
+                          💬
+                        </a>
+                      </div>
+                    </td>
                     <td className="p-4 text-slate-500 text-xs">{c.email}</td>
-                    <td className="p-4 text-slate-600 text-xs">{c.address || 'Sem morada'}</td>
+                    <td className="p-4 text-slate-600 text-xs">
+                      <div>{c.address || 'Sem morada'}</div>
+                      {c.floor_details && <div className="text-slate-400 font-semibold mt-0.5">🚪 {c.floor_details}</div>}
+                    </td>
                     <td className="p-4 text-xs font-semibold">
                       {c.payment_terms === 'monthly_invoice' ? (
                         <span className="bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-1 rounded-xl font-bold">📅 Mensal (Fim do Mês)</span>
@@ -405,7 +426,7 @@ export default function ClientsPage() {
       {/* MODAL NOVO CLIENTE / EDITAR CLIENTE */}
       {(showAddModal || editingClient) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl my-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl my-auto max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg sm:text-xl font-bold text-[#0B192C]">{editingClient ? 'Editar Cliente' : 'Registar Novo Cliente'}</h3>
               <button onClick={closeClientForm} aria-label="Fechar formulário" className="text-slate-400 font-bold p-2">✕</button>
@@ -423,43 +444,91 @@ export default function ClientsPage() {
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">E-mail</label>
                 <input type="email" placeholder="email@exemplo.com" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]" />
               </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Morada Principal</label>
-                <textarea placeholder="Rua, número, andar..." value={address} onChange={e => setAddress(e.target.value)} className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 h-20 outline-none focus:ring-2 focus:ring-[#00D4FF]" />
-              </div>
 
-              {/* CONDIÇÕES DE PAGAMENTO */}
+              {/* MORADA SEPARADA PARA O GPS */}
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Condições de Pagamento</label>
-                <select
-                  value={paymentTerms}
-                  onChange={(e) => setPaymentTerms(e.target.value)}
-                  className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF] font-semibold"
-                >
-                  <option value="per_service">⚡ Pagamento por Limpeza (Imediato / Por Serviço)</option>
-                  <option value="monthly_invoice">📅 Avença / Faturação Mensal (Fim do Mês)</option>
-                </select>
-              </div>
-
-              {/* COORDENADAS COM BOTÃO DE PREENCHIMENTO AUTOMÁTICO */}
-              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                  <legend className="text-xs font-bold uppercase text-slate-700">Coordenadas da morada (Validação GPS)</legend>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold uppercase text-slate-700">Morada (Rua e Número p/ GPS) *</label>
                   <button
                     type="button"
                     disabled={geocoding}
-                    onClick={handleGeocodeAddress}
-                    className="bg-[#00D4FF] hover:bg-[#00c2ea] text-[#0B192C] font-extrabold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-sm disabled:opacity-50"
+                    onClick={() => handleGeocodeAddress(address)}
+                    className="bg-[#00D4FF] hover:bg-[#00c2ea] text-[#0B192C] font-extrabold px-2.5 py-1 rounded-lg text-[11px] transition cursor-pointer shadow-sm disabled:opacity-50"
                   >
-                    {geocoding ? '⌛ A procurar...' : '📍 Obter por Morada'}
+                    {geocoding ? '⌛ A validar...' : '📍 Validar GPS'}
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-500">Pode preencher automaticamente escrevendo a morada acima e clicando no botão, ou introduzir manualmente.</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="text-xs font-semibold text-slate-600">Latitude<input type="number" min="-90" max="90" step="any" inputMode="decimal" value={latitude} onChange={event => setLatitude(event.target.value)} placeholder="38.6600" className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100" /></label>
-                  <label className="text-xs font-semibold text-slate-600">Longitude<input type="number" min="-180" max="180" step="any" inputMode="decimal" value={longitude} onChange={event => setLongitude(event.target.value)} placeholder="-9.0100" className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100" /></label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="Ex: Avenida Doutor José Grilo Evangelista 148" 
+                  value={address} 
+                  onChange={e => setAddress(e.target.value)} 
+                  className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]" 
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">Insira apenas a rua e o número para garantir que o GPS encontra o local com precisão.</span>
+              </div>
+
+              {/* CAMPO SEPARADO PARA ANDAR / PORTA */}
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Andar / Porta / Bloco (Opcional)</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: 3º Direito, Bloco B" 
+                  value={floorDetails} 
+                  onChange={e => setFloorDetails(e.target.value)} 
+                  className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]" 
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* CONDIÇÕES DE PAGAMENTO */}
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Pagamento</label>
+                  <select
+                    value={paymentTerms}
+                    onChange={(e) => setPaymentTerms(e.target.value)}
+                    className="w-full p-3.5 sm:p-3 border rounded-xl text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF] font-semibold"
+                  >
+                    <option value="per_service">⚡ Por Serviço</option>
+                    <option value="monthly_invoice">📅 Avença Mensal</option>
+                  </select>
                 </div>
-              </fieldset>
+
+                {/* CANAL DE ORIGEM */}
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Canal de Origem</label>
+                  <select
+                    value={sourceChannel}
+                    onChange={(e) => setSourceChannel(e.target.value)}
+                    className="w-full p-3.5 sm:p-3 border rounded-xl text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF] font-semibold"
+                  >
+                    <option value="WhatsApp">WhatsApp</option>
+                    <option value="Instagram">Instagram</option>
+                    <option value="Landing Page">Landing Page</option>
+                    <option value="Passa-a-palavra">Passa-a-palavra</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* NOTAS INTERNAS E PREFERÊNCIAS */}
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Notas Internas / Preferências</label>
+                <textarea 
+                  placeholder="Ex: Tem cão de pequeno porte; prefere produtos ecológicos..." 
+                  value={clientNotes} 
+                  onChange={e => setClientNotes(e.target.value)} 
+                  className="w-full p-3.5 sm:p-3 border rounded-xl text-base sm:text-sm bg-slate-50 h-20 outline-none focus:ring-2 focus:ring-[#00D4FF]" 
+                />
+              </div>
+
+              {latitude && longitude && (
+                <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl text-xs text-emerald-800 flex items-center justify-between">
+                  <span>✅ GPS Validado com sucesso!</span>
+                  <span className="font-mono text-[10px]">{latitude.toFixed(4)}, {longitude.toFixed(4)}</span>
+                </div>
+              )}
 
               <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
                 <button type="button" onClick={closeClientForm} className="w-full sm:w-auto px-4 py-3 sm:py-2 text-xs font-bold text-slate-600">Cancelar</button>
@@ -477,22 +546,37 @@ export default function ClientsPage() {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl space-y-6 my-auto max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="text-lg sm:text-xl font-bold text-[#0B192C]">{viewingClient.name}</h3>
+              <div>
+                <h3 className="text-lg sm:text-xl font-bold text-[#0B192C]">{viewingClient.name}</h3>
+                <span className="text-[11px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">Origem: {viewingClient.source_channel || 'Desconhecida'}</span>
+              </div>
               <button onClick={() => setViewingClient(null)} className="font-bold text-slate-400 hover:text-slate-600 p-2">✕</button>
             </div>
 
             <div className="space-y-2 text-xs sm:text-sm text-slate-600 bg-slate-50 p-4 rounded-2xl">
-              <p>📞 <strong>Telemóvel:</strong> {viewingClient.phone}</p>
+              <div className="flex justify-between items-center">
+                <p>📞 <strong>Telemóvel:</strong> {viewingClient.phone}</p>
+                <a 
+                  href={`https://wa.me/${viewingClient.phone.replace(/\D/g, '')}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-xl text-xs flex items-center gap-1 shadow-xs"
+                >
+                  💬 Abrir WhatsApp
+                </a>
+              </div>
               <p>✉️ <strong>E-mail:</strong> {viewingClient.email}</p>
-              <p>📍 <strong>Morada:</strong> {viewingClient.address || 'Não registada'}</p>
+              <p>📍 <strong>Morada (GPS):</strong> {viewingClient.address || 'Não registada'}</p>
+              {viewingClient.floor_details && <p>🚪 <strong>Andar / Porta:</strong> {viewingClient.floor_details}</p>}
+              {viewingClient.notes && <p>📝 <strong>Notas / Preferências:</strong> <span className="text-amber-900 font-semibold">{viewingClient.notes}</span></p>}
               <p>💳 <strong>Condição de Pagamento:</strong> {viewingClient.payment_terms === 'monthly_invoice' ? '📅 Faturação Mensal (Fim do Mês)' : '⚡ Por Serviço'}</p>
-              <p>⌖ <strong>Coordenadas:</strong> {viewingClient.latitude != null && viewingClient.longitude != null ? `${viewingClient.latitude}, ${viewingClient.longitude}` : 'Não registadas — ações de tempo GPS indisponíveis'}</p>
+              <p>⌖ <strong>Estado GPS:</strong> {viewingClient.latitude != null && viewingClient.longitude != null ? '✅ Coordenadas válidas registadas' : '⚠️ Sem coordenadas validadas'}</p>
             </div>
 
             <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex flex-col gap-2">
               <span className="text-xs font-bold text-emerald-800">Acesso ao Portal do Cliente</span>
-              {viewingClient.auth_user_id ? <p className="text-[11px] font-semibold text-emerald-800">Este cliente já tem uma conta vinculada. Por segurança, a palavra-passe existente não pode ser consultada nem gerada novamente aqui.</p> : <>
-                <p className="text-[11px] text-emerald-700">Será criada uma palavra-passe temporária e a conta ficará vinculada a esta ficha. Confirme o número antes de partilhar as credenciais.</p>
+              {viewingClient.auth_user_id ? <p className="text-[11px] font-semibold text-emerald-800">Este cliente já tem uma conta vinculada.</p> : <>
+                <p className="text-[11px] text-emerald-700">Será criada uma palavra-passe temporária e a conta ficará vinculada a esta ficha.</p>
                 <button
                   type="button"
                   onClick={() => void handleGerarAcessoWhatsApp(viewingClient)}

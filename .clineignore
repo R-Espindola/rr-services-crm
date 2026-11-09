@@ -1,0 +1,16 @@
+# Ficheiros de ambiente e chaves secretas
+.env
+.env.*
+*.pem
+*.key
+
+# Dependências e compilações pesadas
+node_modules/
+.next/
+dist/
+build/
+out/
+
+# Dados e Logs
+*.log
+.git/
