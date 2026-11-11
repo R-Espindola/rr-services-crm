@@ -14,12 +14,7 @@ export default function BusinessContextPage() {
   const [differential, setDifferential] = useState('Rigor, confiança e atenção ao detalhe.');
   const [aiToneOfVoice, setAiToneOfVoice] = useState('Profissional, empático, claro e focado em conversão.');
 
-  useEffect(() => {
-    fetchContext();
-  }, []);
-
   async function fetchContext() {
-    setLoading(true);
     const { data, error } = await supabase.from('business_context').select('*').limit(1).single();
     if (data && !error) {
       setCompanyName(data.company_name || 'R&R Services');
@@ -30,6 +25,11 @@ export default function BusinessContextPage() {
     }
     setLoading(false);
   }
+
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => void fetchContext(), 0);
+    return () => window.clearTimeout(initialLoad);
+  }, []);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();

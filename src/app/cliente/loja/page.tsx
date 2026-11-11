@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import Link from "next/link";
+import Image from "next/image";
 
 export interface Product {
   id: string
@@ -21,7 +21,7 @@ export default function ClientStorePage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [submitting, setSubmitting] = useState(false)
-  const [currentClient, setCurrentClient] = useState<any>(null)
+  const [currentClient, setCurrentClient] = useState<{ id: string } | null>(null)
 
   useEffect(() => {
     fetchStoreData()
@@ -34,7 +34,7 @@ export default function ClientStorePage() {
     if (!authError && user) {
       const { data: clientData } = await supabase
         .from('clients')
-        .select('*')
+        .select('id')
         .eq('auth_user_id', user.id)
         .single()
 
@@ -109,9 +109,9 @@ export default function ClientStorePage() {
             {products.map((prod) => (
               <div key={prod.id} className="group flex min-w-0 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg sm:p-5">
                 <div>
-                  <div className="mb-3 flex h-28 w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 sm:mb-4 sm:h-40 sm:rounded-2xl">
+                  <div className="relative mb-3 flex h-28 w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 sm:mb-4 sm:h-40 sm:rounded-2xl">
                     {prod.image_url ? (
-                      <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover" />
+                      <Image src={prod.image_url} alt={prod.name} fill unoptimized sizes="(min-width: 1280px) 25vw, 50vw" className="object-cover" />
                     ) : (
                       <span className="text-4xl">🧴</span>
                     )}

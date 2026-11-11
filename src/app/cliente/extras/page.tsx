@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
+import Image from "next/image"
 import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -24,6 +25,8 @@ type ClientAppointment = {
   scheduled_date: string
   service_type: string
 }
+
+type CatalogServiceRow = Omit<ExtraService, 'original_price' | 'discount_percentage'>
 
 const formatarPreco = (valor: number | null) => {
   if (valor === null || isNaN(valor)) return "Sob Consulta";
@@ -95,7 +98,7 @@ export default function ClientExtrasPage() {
       if (catError) throw catError
       
       setServices(
-        (catalogData ?? []).map((item: any) => ({
+        ((catalogData ?? []) as CatalogServiceRow[]).map((item) => ({
           ...item,
           image_url: item.image_url || "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=85",
           original_price: item.price ? Number(item.price) * 1.25 : 0,
@@ -110,7 +113,8 @@ export default function ClientExtrasPage() {
   }, [router])
 
   useEffect(() => {
-    void fetchClientAppointmentsAndCatalog()
+    const initialLoad = window.setTimeout(() => void fetchClientAppointmentsAndCatalog(), 0)
+    return () => window.clearTimeout(initialLoad)
   }, [fetchClientAppointmentsAndCatalog])
 
   function check12HourRule(scheduledDateIso: string): boolean {
@@ -228,7 +232,7 @@ export default function ClientExtrasPage() {
               >
                 <div>
                   <div className="relative h-36 bg-slate-100 overflow-hidden">
-                    <img src={item.image_url || ""} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                    <Image src={item.image_url || "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=85"} alt={item.name} fill unoptimized sizes="(min-width: 1024px) 33vw, 50vw" className="object-cover transition duration-300 group-hover:scale-105" />
                     <span className="absolute top-2 left-2 bg-[#0B192C]/80 backdrop-blur-xs text-[10px] font-black text-white px-2 py-0.5 rounded-md uppercase">
                       {item.category}
                     </span>
@@ -267,8 +271,8 @@ export default function ClientExtrasPage() {
                 >
                   ✕ Fechar
                 </button>
-                <div className="h-40 rounded-2xl overflow-hidden shadow-xs mb-4">
-                  <img src={selectedService.image_url || ""} alt="" className="w-full h-full object-cover" />
+                <div className="relative h-40 rounded-2xl overflow-hidden shadow-xs mb-4">
+                  <Image src={selectedService.image_url || "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=85"} alt={selectedService.name} fill unoptimized sizes="(min-width: 768px) 50vw, 100vw" className="object-cover" />
                 </div>
                 <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-cyan-100 text-sky-900 inline-block mb-2">
                   {selectedService.category}

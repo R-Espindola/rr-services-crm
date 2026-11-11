@@ -67,31 +67,14 @@ export default function LoginPage() {
         return;
       }
 
-      const userEmail = data.user.email?.toLowerCase() || '';
-      
-      // FORÇAR ROTA DE ADMIN PARA O SEU E-MAIL, DOMÍNIO OU SE CONTIVER "admin"
-      if (userEmail === 'rrservices.pt@gmail.com' || userEmail.includes('admin') || userEmail.endsWith('@rrservices.pt')) {
-        router.push('/admin/servicos');
+      const { data: isAdmin, error: permissionError } = await supabase.rpc('is_admin');
+      if (!permissionError && isAdmin === true) {
+        router.replace('/admin');
         return;
       }
 
-      // Caso contrário, verifica se é um cliente normal
-      let destino = '/cliente';
-      try {
-        const { data: clientData } = await supabase
-          .from('clients')
-          .select('role')
-          .eq('auth_user_id', data.user.id)
-          .maybeSingle();
-
-        if (clientData?.role === 'admin') {
-          destino = '/admin/servicos';
-        }
-      } catch {
-        // Mantém /cliente
-      }
-
-      router.push(destino);
+      // O middleware encaminha trabalhadores e clientes para a área correta.
+      router.replace('/cliente');
     } catch {
       setErro('Ocorreu um erro ao tentar ligar ao servidor.');
     } finally {

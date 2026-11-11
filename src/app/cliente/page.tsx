@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 
 interface Client {
@@ -56,6 +57,23 @@ interface Product {
   description?: string | null;
 }
 
+interface ExtraCatalogRow {
+  id: string;
+  name: string;
+  price: number | null;
+  price_type: "fixed" | "per_unit" | "quote";
+  image_url: string | null;
+  description: string | null;
+}
+
+interface ProductCatalogRow {
+  id: string;
+  name: string;
+  price: number | null;
+  image_url: string | null;
+  description: string | null;
+}
+
 const formatarPreco = (valor: number) =>
   new Intl.NumberFormat("pt-PT", {
     style: "currency",
@@ -92,7 +110,6 @@ export default function ClienteDashboard() {
   // Dados do cliente autenticado
   const [cliente, setCliente] = useState<Client | null>(null);
   const [proximoServico, setProximoServico] = useState<Order | null>(null);
-  const [pedidosPendentes, setPedidosPendentes] = useState<Order[]>([]);
   const [orcamentosPendentes, setOrcamentosPendentes] = useState<Quote[]>([]);
   const [ultimoConcluido, setUltimoConcluido] = useState<Order | null>(null);
   const [servicosExtra, setServicosExtra] = useState<ExtraService[]>([]);
@@ -151,9 +168,6 @@ export default function ClienteDashboard() {
       );
       setProximoServico(proximo || null);
 
-      const pendentes = orders.filter((o) => o.status === "pending");
-      setPedidosPendentes(pendentes);
-
       const concluidos = orders
         .filter((o) => o.status === "completed")
         .sort(
@@ -184,7 +198,7 @@ export default function ClienteDashboard() {
 
       if (extrasData) {
         setServicosExtra(
-          (extrasData as any[]).map((item) => ({
+          (extrasData as unknown as ExtraCatalogRow[]).map((item) => ({
             id: item.id,
             titulo: item.name,
             preco: item.price_type === "quote" ? 0 : item.price || 0,
@@ -204,7 +218,7 @@ export default function ClienteDashboard() {
 
       if (productsData) {
         setProdutosLoja(
-          (productsData as any[]).map((item) => ({
+          (productsData as unknown as ProductCatalogRow[]).map((item) => ({
             id: item.id,
             nome: item.name,
             preco: item.price || 0,
@@ -221,7 +235,8 @@ export default function ClienteDashboard() {
   };
 
   useEffect(() => {
-    carregarDados();
+    const initialLoad = window.setTimeout(() => void carregarDados(), 0);
+    return () => window.clearTimeout(initialLoad);
   }, []);
 
   const extrasEscolhidos = servicosExtra.filter((item) =>
@@ -269,8 +284,11 @@ export default function ClienteDashboard() {
       setExtraSelecionado([]);
       setObservacoes("");
       await carregarDados();
-    } catch (err: any) {
-      setMensagem("Erro ao submeter o pedido: " + (err.message || "Tente novamente."));
+    } catch (err: unknown) {
+      const errorMessage = err && typeof err === "object" && "message" in err
+        ? String(err.message)
+        : "Tente novamente.";
+      setMensagem("Erro ao submeter o pedido: " + errorMessage);
     } finally {
       setSubmittingExtra(false);
     }
@@ -453,7 +471,7 @@ export default function ClienteDashboard() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full">Último Serviço Concluído</span>
-                <h3 className="text-base font-black text-[#0B192C] mt-2">Como avalia a limpeza de "{ultimoConcluido.service_type}"?</h3>
+                <h3 className="text-base font-black text-[#0B192C] mt-2">Como avalia a limpeza de “{ultimoConcluido.service_type}”?</h3>
               </div>
             </div>
             <form onSubmit={enviarFeedback} className="space-y-4">
@@ -531,7 +549,7 @@ export default function ClienteDashboard() {
                         className="peer sr-only"
                       />
                       <span className="relative block h-36 overflow-hidden bg-slate-100">
-                        <img src={item.imagem} alt="" loading="lazy" className="h-full w-full object-cover transition duration-300 hover:scale-105" />
+                        <Image src={item.imagem} alt={item.titulo} fill unoptimized sizes="(min-width: 1280px) 25vw, 50vw" className="object-cover transition duration-300 hover:scale-105" />
                         <span className="absolute right-3 top-3 rounded-xl bg-[#0B192C] px-2.5 py-1 text-xs font-black text-[#00D4FF] shadow-xs">{formatarPreco(item.preco)}</span>
                         {selecionado && <span className="absolute left-3 top-3 rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white shadow-xs">Selecionado ✓</span>}
                       </span>
@@ -599,7 +617,7 @@ export default function ClienteDashboard() {
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {produtosLoja.slice(0, 3).map((produto) => (
                 <article key={produto.id} className="flex gap-4 rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:shadow-md sm:flex-col">
-                  <img src={produto.imagem} alt="" loading="lazy" className="h-28 w-28 shrink-0 rounded-2xl bg-slate-100 object-cover sm:h-40 sm:w-full" />
+                  <Image src={produto.imagem} alt={produto.nome} width={320} height={320} unoptimized className="h-28 w-28 shrink-0 rounded-2xl bg-slate-100 object-cover sm:h-40 sm:w-full" />
                   <div className="flex min-w-0 flex-1 flex-col">
                     <h3 className="text-xs font-black text-[#0B192C] leading-snug">{produto.nome}</h3>
                     <p className="mt-2 text-base font-black text-[#0B192C]">{formatarPreco(produto.preco)}</p>

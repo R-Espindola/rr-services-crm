@@ -20,6 +20,7 @@ type Order = {
   scheduled_date: string
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
   notes: string | null
+  worker_notes: string | null
   started_at: string | null
   completed_at: string | null
   duration_minutes: number | null
@@ -29,7 +30,13 @@ type Order = {
   clients: ClientInfo | ClientInfo[] | null
 }
 
-const defaultTasks = (service: string): ChecklistItem[] => {
+type VisitSummary = {
+  order: Order
+  checklist: ChecklistItem[]
+  durationSeconds: number
+}
+
+const defaultTasks = (): ChecklistItem[] => {
   return [
     { category: 'Cozinha (Base)', label: 'Limpar bancadas, mesa e lava-louça', done: false },
     { category: 'Cozinha (Base)', label: 'Limpar exterior de eletrodomésticos', done: false },
@@ -66,6 +73,39 @@ const formatDuration = (totalSeconds: number) => {
   return `${mins.toString().padStart(2, '0')}m ${secs.toString().padStart(2, '0')}s`
 }
 
+const formatRemaining = (totalSeconds: number) => {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes} min ${String(seconds).padStart(2, '0')} s`
+}
+
+function sharePhoneNumber(phone: string) {
+  let digits = phone.replace(/\D/g, '')
+  if (digits.startsWith('00')) digits = digits.slice(2)
+  if (digits.length === 9) digits = `351${digits}`
+  return digits
+}
+
+function visitSummaryMessage(summary: VisitSummary) {
+  const client = getClient(summary.order.clients)
+  const completedTasks = summary.checklist.filter((task) => task.done)
+  const taskList = completedTasks.length
+    ? completedTasks.map((task) => `• ${task.label}`).join('\n')
+    : '• Sem tarefas assinaladas.'
+
+  return [
+    `Olá ${client.name || 'Cliente'}, a limpeza de ${summary.order.service_type} foi concluída.`,
+    `Estado da visita: Concluída.`,
+    `Tempo de trabalho: ${formatDuration(summary.durationSeconds)}.`,
+    '',
+    'Tarefas executadas:',
+    taskList,
+    summary.order.worker_notes?.trim() ? `\nObservações: ${summary.order.worker_notes.trim()}` : '',
+    '',
+    'Obrigado pela confiança na R&R Services.',
+  ].filter(Boolean).join('\n')
+}
+
 export default function WorkerAgendaPage() {
   const router = useRouter()
   const [workerName, setWorkerName] = useState('')
@@ -74,7 +114,7 @@ export default function WorkerAgendaPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  const [clock, setClock] = useState(Date.now())
+  const [clock, setClock] = useState(0)
   const [agendaView, setAgendaView] = useState<'today' | 'week' | 'month'>('today')
   const [periodOffset, setPeriodOffset] = useState(0)
   
@@ -84,14 +124,22 @@ export default function WorkerAgendaPage() {
   const [copiedAddressId, setCopiedAddressId] = useState<string | null>(null)
   const [checklistOpen, setChecklistOpen] = useState<Record<string, boolean>>({})
   const [customTaskInput, setCustomTaskInput] = useState<Record<string, string>>({})
+  const [incidentNotes, setIncidentNotes] = useState<Record<string, string>>({})
+  const [savedIncidentNotes, setSavedIncidentNotes] = useState<Record<string, boolean>>({})
+  const [visitSummary, setVisitSummary] = useState<VisitSummary | null>(null)
 
   const toggleChecklistOpen = (orderId: string) => {
     setChecklistOpen(prev => ({ ...prev, [orderId]: !prev[orderId] }))
   }
 
   useEffect(() => {
-    const timer = setInterval(() => setClock(Date.now()), 1000)
-    return () => clearInterval(timer)
+    const updateClock = () => setClock(Date.now())
+    const initialUpdate = window.setTimeout(updateClock, 0)
+    const timer = window.setInterval(updateClock, 1000)
+    return () => {
+      window.clearTimeout(initialUpdate)
+      window.clearInterval(timer)
+    }
   }, [])
 
   const loadAgenda = useCallback(async () => {
@@ -136,7 +184,7 @@ export default function WorkerAgendaPage() {
       }
 
       const { data, error: ordersError } = await supabase.from('orders')
-        .select('id, client_id, service_type, scheduled_date, status, notes, started_at, completed_at, duration_minutes, paused_at, paused_duration_seconds, worker_checklist, clients(name, address, phone, latitude, longitude)')
+        .select('id, client_id, service_type, scheduled_date, status, notes, worker_notes, started_at, completed_at, duration_minutes, paused_at, paused_duration_seconds, worker_checklist, clients(name, address, phone, latitude, longitude)')
         .eq('worker_user_id', user.id)
         .gte('scheduled_date', start.toISOString())
         .lt('scheduled_date', end.toISOString())
@@ -146,7 +194,7 @@ export default function WorkerAgendaPage() {
 
       const rows = ((data ?? []) as unknown as Order[]).map((order) => ({
         ...order,
-        worker_checklist: order.worker_checklist?.length ? order.worker_checklist : defaultTasks(order.service_type),
+        worker_checklist: order.worker_checklist?.length ? order.worker_checklist : defaultTasks(),
       }))
       setOrders(rows)
 
@@ -174,16 +222,64 @@ export default function WorkerAgendaPage() {
     setNotice('')
     setError('')
     try {
-      const rpcName = { start: 'worker_start_cleaning', pause: 'worker_pause_cleaning', resume: 'worker_resume_cleaning', finish: 'worker_finish_cleaning' }[action]
-      const { error: rpcError } = await supabase.rpc(rpcName, { p_order_id: order.id })
-      if (rpcError) throw rpcError
-      setNotice({ start: 'Limpeza iniciada. Bom trabalho!', pause: 'Cronómetro pausado.', resume: 'Cronómetro retomado.', finish: 'Limpeza concluída com sucesso.' }[action])
-      await loadAgenda()
+      if (action === 'finish') {
+        const notes = incidentNotes[order.id] ?? order.worker_notes ?? ''
+        const { error: notesError } = await supabase.rpc('worker_save_incident_notes', {
+          p_order_id: order.id,
+          p_notes: notes,
+        })
+        if (notesError) throw notesError
+
+        const { data: completion, error: finishError } = await supabase.rpc('worker_finish_cleaning', { p_order_id: order.id })
+        if (finishError) throw finishError
+
+        const durationMinutes = typeof completion?.duration_minutes === 'number' ? completion.duration_minutes : 0
+        const completedAt = typeof completion?.completed_at === 'string' ? completion.completed_at : new Date().toISOString()
+        const completedOrder: Order = {
+          ...order,
+          status: 'completed',
+          completed_at: completedAt,
+          duration_minutes: durationMinutes,
+          worker_notes: notes.trim(),
+        }
+        const summary = { order: completedOrder, checklist: order.worker_checklist ?? [], durationSeconds: durationMinutes * 60 }
+        setOrders((current) => current.map((item) => item.id === order.id ? completedOrder : item))
+        setVisitSummary(summary)
+        setSavedIncidentNotes((current) => ({ ...current, [order.id]: true }))
+        setNotice('Visita concluída. O resumo está pronto para partilhar com o cliente.')
+      } else {
+        const rpcName = { start: 'worker_start_cleaning', pause: 'worker_pause_cleaning', resume: 'worker_resume_cleaning' }[action]
+        const { error: rpcError } = await supabase.rpc(rpcName, { p_order_id: order.id })
+        if (rpcError) throw rpcError
+        setNotice({ start: 'Serviço iniciado. Bom trabalho!', pause: 'Cronómetro pausado.', resume: 'Cronómetro retomado.' }[action])
+        await loadAgenda()
+      }
     } catch (cause) {
       const rpcMessage = typeof cause === 'object' && cause !== null && 'message' in cause ? String(cause.message) : ''
       setError(rpcMessage.includes('start window opens')
-        ? 'Só poderá iniciar a limpeza a partir de 5 minutos antes do horário agendado.'
+        ? 'O início fica disponível 10 minutos antes do horário agendado.'
         : 'Não foi possível atualizar o estado da limpeza. Atualize a página e tente novamente.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function saveIncidentNotes(order: Order) {
+    const notes = incidentNotes[order.id] ?? order.worker_notes ?? ''
+    setBusy(`notes-${order.id}`)
+    setError('')
+    try {
+      const { error: notesError } = await supabase.rpc('worker_save_incident_notes', {
+        p_order_id: order.id,
+        p_notes: notes,
+      })
+      if (notesError) throw notesError
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, worker_notes: notes.trim() } : item))
+      setSavedIncidentNotes((current) => ({ ...current, [order.id]: true }))
+      setNotice('Observação guardada no registo da visita.')
+    } catch {
+      setSavedIncidentNotes((current) => ({ ...current, [order.id]: false }))
+      setError('Não foi possível guardar a observação. Tente novamente.')
     } finally {
       setBusy(null)
     }
@@ -246,10 +342,18 @@ export default function WorkerAgendaPage() {
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#F3F6FA] text-sm font-bold text-slate-500">A carregar a sua agenda...</main>
   if (error && !orders.length) return <main className="flex min-h-screen items-center justify-center bg-[#F3F6FA] px-6"><div className="max-w-md rounded-[28px] border border-rose-200 bg-white p-8 text-center shadow-xl"><p className="text-sm font-bold text-rose-600">{error}</p><Link href="/login" className="mt-5 inline-flex h-12 items-center rounded-2xl bg-[#0B192C] px-6 text-xs font-black text-white shadow-md hover:bg-slate-800 transition">Iniciar sessão</Link></div></main>
 
+  const summaryClient = visitSummary ? getClient(visitSummary.order.clients) : null
+  const summaryText = visitSummary ? visitSummaryMessage(visitSummary) : ''
+  const summaryPhone = summaryClient?.phone?.trim() ?? ''
+  const whatsappNumber = summaryPhone ? sharePhoneNumber(summaryPhone) : ''
+  const whatsappShareUrl = whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(summaryText)}` : ''
+  const smsRecipient = summaryPhone.replace(/[^\d+]/g, '')
+  const smsShareUrl = smsRecipient ? `sms:${smsRecipient}?body=${encodeURIComponent(summaryText)}` : ''
+
   return (
     <div className="min-h-screen bg-[#F3F6FA] text-[#0B192C]">
       {/* Header Superior Moderno */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#081426]/90 backdrop-blur-xl text-white shadow-lg">
+      <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#081426]/95 text-white shadow-sm backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1550px] items-center justify-between px-6 py-4 lg:px-10">
           <Link href="/trabalhador" className="flex items-center gap-3.5 group">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00D4FF] text-sm font-black text-[#0B192C] shadow-lg shadow-[#00D4FF]/20 group-hover:scale-105 transition">R&R</span>
@@ -422,8 +526,9 @@ export default function WorkerAgendaPage() {
                 const completedTasks = checklist.filter((task) => task.done)
                 const completionProgress = checklist.length ? Math.round((completedTasks.length / checklist.length) * 100) : 0
 
-                const startAvailableAt = new Date(order.scheduled_date).getTime() - 5 * 60_000
+                const startAvailableAt = new Date(order.scheduled_date).getTime() - 10 * 60_000
                 const canStartNow = clock >= startAvailableAt
+                const secondsUntilStart = Math.max(0, Math.ceil((startAvailableAt - clock) / 1000))
 
                 let elapsedSeconds = 0
                 if (order.status === 'in_progress' && order.started_at) {
@@ -471,10 +576,12 @@ export default function WorkerAgendaPage() {
                           <p className="text-xs font-semibold text-slate-400 capitalize">🕒 {formatTime(order.scheduled_date)} · {formatDate(order.scheduled_date)}</p>
                           
                           {order.status === 'in_progress' && (
-                            <div className="inline-flex items-center gap-2.5 rounded-2xl bg-[#0B192C] text-[#00D4FF] px-4 py-2.5 text-xs font-mono font-bold shadow-md">
-                              <span className="h-2 w-2 rounded-full bg-[#00D4FF] animate-ping" />
-                              <span>Tempo Trabalhado: {formatDuration(elapsedSeconds)}</span>
-                              {order.paused_at && <span className="text-violet-300 text-[10px] font-sans font-normal uppercase tracking-wide ml-1">(Pausado)</span>}
+                            <div className="mt-3 inline-flex min-w-56 items-center gap-3 rounded-2xl border border-cyan-300/15 bg-gradient-to-r from-[#0B192C] to-[#12314a] px-4 py-3 text-white shadow-sm">
+                              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${order.paused_at ? 'bg-violet-300' : 'animate-pulse bg-[#00D4FF]'}`} />
+                              <span>
+                                <span className="block text-[9px] font-bold uppercase tracking-[0.16em] text-slate-300">{order.paused_at ? 'Cronómetro em pausa' : 'Tempo trabalhado'}</span>
+                                <span className="mt-0.5 block font-mono text-lg font-bold tracking-wide text-[#7ceaff]">{formatDuration(elapsedSeconds)}</span>
+                              </span>
                             </div>
                           )}
 
@@ -520,18 +627,18 @@ export default function WorkerAgendaPage() {
                         <div className="w-full sm:w-auto sm:min-w-56 space-y-2">
                           <button type="button" disabled={busy !== null || !canStartNow} onClick={() => void updateOrder(order, 'start')} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#0B192C] px-6 text-xs font-black text-white shadow-lg hover:bg-slate-800 disabled:opacity-55 disabled:cursor-not-allowed transition">
                             <span aria-hidden="true">▶</span>
-                            {busy === `start-${order.id}` ? 'A iniciar...' : !canStartNow ? 'Aguardar horário' : 'Iniciar limpeza'}
+                            {busy === `start-${order.id}` ? 'A iniciar...' : !canStartNow ? `Disponível em ${formatRemaining(secondsUntilStart)}` : 'Iniciar Serviço'}
                           </button>
-                          {!canStartNow && <p className="text-center text-[10px] font-bold text-amber-600">Disponível às {formatTime(new Date(startAvailableAt).toISOString())}</p>}
+                          {!canStartNow && <p className="text-center text-[10px] font-medium text-slate-500">Pode iniciar até 10 minutos antes da hora marcada.</p>}
                         </div>
                       )}
 
                       {order.status === 'in_progress' && (
                         <div className="w-full sm:w-auto sm:min-w-56">
                           {order.paused_at ? (
-                            <button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'resume')} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 px-6 text-xs font-black text-white hover:bg-violet-700 transition shadow-md">▶ Retomar limpeza</button>
+                            <button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'resume')} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 px-6 text-xs font-black text-white hover:bg-violet-700 transition shadow-md">▶ Retomar Serviço</button>
                           ) : (
-                            <button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'pause')} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 px-6 text-xs font-black text-violet-700 hover:bg-violet-100 transition shadow-xs">⏸ Pausar limpeza</button>
+                            <button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'pause')} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 px-6 text-xs font-black text-violet-700 hover:bg-violet-100 transition shadow-xs">⏸ Pausar Serviço</button>
                           )}
                         </div>
                       )}
@@ -587,6 +694,43 @@ export default function WorkerAgendaPage() {
                           </div>
                         )}
 
+                        {order.status === 'in_progress' && (
+                          <section className="rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 sm:p-5">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <h4 className="text-xs font-black text-[#0B192C]">Incidências e observações</h4>
+                                <p className="mt-1 text-[11px] leading-5 text-slate-600">Registe danos, anomalias ou detalhes importantes encontrados no local.</p>
+                              </div>
+                              <span className="text-[10px] font-semibold text-slate-500">
+                                {savedIncidentNotes[order.id] ?? Boolean(order.worker_notes?.trim()) ? 'Guardada' : 'Opcional'}
+                              </span>
+                            </div>
+                            <label className="sr-only" htmlFor={`incident-notes-${order.id}`}>Incidências e observações da visita</label>
+                            <textarea
+                              id={`incident-notes-${order.id}`}
+                              rows={3}
+                              maxLength={2000}
+                              value={incidentNotes[order.id] ?? order.worker_notes ?? ''}
+                              onChange={(event) => {
+                                setIncidentNotes((current) => ({ ...current, [order.id]: event.target.value }))
+                                setSavedIncidentNotes((current) => ({ ...current, [order.id]: false }))
+                              }}
+                              placeholder="Ex.: torneira com fuga na casa de banho..."
+                              className="mt-3 min-h-24 w-full resize-y rounded-xl border border-amber-200 bg-white px-3.5 py-3 text-sm leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-100"
+                            />
+                            <div className="mt-3 flex justify-end">
+                              <button
+                                type="button"
+                                disabled={busy !== null}
+                                onClick={() => void saveIncidentNotes(order)}
+                                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-50"
+                              >
+                                {busy === `notes-${order.id}` ? 'A guardar...' : 'Guardar observação'}
+                              </button>
+                            </div>
+                          </section>
+                        )}
+
                         {/* Botão de Finalizar Limpeza */}
                         {order.status === 'in_progress' && (
                           <div className="pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -600,7 +744,7 @@ export default function WorkerAgendaPage() {
                               className="inline-flex h-12 w-full sm:w-auto items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-8 text-xs font-black text-white transition hover:bg-emerald-700 disabled:opacity-50 shadow-lg"
                             >
                               <span>✓</span>
-                              {busy === `finish-${order.id}` ? 'A finalizar...' : 'Finalizar limpeza'}
+                              {busy === `finish-${order.id}` ? 'A finalizar...' : 'Finalizar Serviço'}
                             </button>
                           </div>
                         )}
@@ -613,6 +757,42 @@ export default function WorkerAgendaPage() {
           )}
         </main>
       </div>
+      {visitSummary && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-[#071326]/65 p-0 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setVisitSummary(null)
+        }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="visit-summary-title" className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] border border-white/70 bg-white p-5 shadow-2xl sm:rounded-[28px] sm:p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500" />Visita concluída</span>
+                <h2 id="visit-summary-title" className="mt-3 text-xl font-black tracking-tight text-[#0B192C]">Resumo da limpeza</h2>
+                <p className="mt-1 text-sm text-slate-500">{summaryClient?.name || 'Cliente'} · {visitSummary.order.service_type}</p>
+              </div>
+              <button type="button" aria-label="Fechar resumo" onClick={() => setVisitSummary(null)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-lg text-slate-500 transition hover:bg-slate-50">×</button>
+            </div>
+            <div className="mt-5 rounded-2xl bg-[#0B192C] p-4 text-white">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Tempo total trabalhado</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-[#7ceaff]">{formatDuration(visitSummary.durationSeconds)}</p>
+            </div>
+            <div className="mt-5">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">Tarefas executadas · {visitSummary.checklist.filter((task) => task.done).length}</h3>
+              {visitSummary.checklist.some((task) => task.done) ? (
+                <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
+                  {visitSummary.checklist.filter((task) => task.done).map((task) => <li key={task.id} className="flex gap-2.5 rounded-xl bg-emerald-50/70 px-3 py-2.5 text-sm text-emerald-950"><span aria-hidden="true" className="font-bold text-emerald-600">✓</span><span>{task.label}</span></li>)}
+                </ul>
+              ) : <p className="mt-3 rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">Nenhuma tarefa foi assinalada nesta visita.</p>}
+            </div>
+            {visitSummary.order.worker_notes?.trim() && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5"><h3 className="text-[10px] font-black uppercase tracking-wider text-amber-800">Observações</h3><p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-amber-950">{visitSummary.order.worker_notes}</p></div>}
+            <p className="mt-4 text-xs text-slate-500">Estado da visita: <span className="font-bold text-emerald-700">Concluída</span></p>
+            <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {whatsappShareUrl && <a href={whatsappShareUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-12 items-center justify-center rounded-xl bg-[#128C7E] px-4 text-sm font-bold text-white transition hover:bg-[#0e776b]">Partilhar por WhatsApp</a>}
+              {smsShareUrl && <a href={smsShareUrl} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-[#0B192C] transition hover:bg-slate-50">Enviar por SMS</a>}
+              {!summaryPhone && <p className="col-span-full rounded-xl bg-slate-50 p-3 text-center text-xs text-slate-500">Este cliente não tem número de telefone registado para partilha.</p>}
+            </div>
+            <button type="button" onClick={() => setVisitSummary(null)} className="mt-3 min-h-11 w-full rounded-xl px-4 text-sm font-bold text-slate-500 transition hover:bg-slate-50">Fechar resumo</button>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

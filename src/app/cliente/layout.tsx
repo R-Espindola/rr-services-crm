@@ -70,7 +70,7 @@ export default function ClientPortalLayout({ children }: Readonly<{ children: Re
         <p className="mt-5 px-3 text-[10px] text-slate-400">© 2026 R&amp;R Services</p>
       </aside>
       <div className="min-h-dvh min-w-0 pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:pl-[260px] md:pb-0">
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-[#081426]/95 px-4 py-3 text-white shadow-lg backdrop-blur-xl sm:px-6">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/[0.08] bg-[#081426]/95 px-4 py-3 text-white shadow-sm backdrop-blur-xl sm:px-6">
           <Link href="/cliente" className="flex min-h-11 items-center gap-3 md:hidden" aria-label="R&R Services, portal do cliente">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00D4FF] text-xs font-black text-[#0B192C]">R&amp;R</span>
             <span><span className="block text-sm font-extrabold tracking-wide">R&amp;R SERVICES</span><span className="block text-[9px] uppercase tracking-[0.16em] text-slate-400">Portal do cliente</span></span>

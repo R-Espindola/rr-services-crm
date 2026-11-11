@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase-server'
+import { getAdminSession } from '@/lib/admin-auth'
 
 export const runtime = 'nodejs'
 
@@ -44,14 +44,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Formato do pedido inválido.' }, { status: 415 })
     }
 
-    const authClient = await createClient()
-    const { data: { user }, error: authError } = await authClient.auth.getUser()
-    if (authError || !user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
-
-    const { data: requester, error: roleError } = await authClient.from('clients')
-      .select('role').eq('auth_user_id', user.id).maybeSingle()
-    if (roleError) return NextResponse.json({ error: 'Não foi possível validar as permissões.' }, { status: 500 })
-    if (requester?.role !== 'admin') return NextResponse.json({ error: 'Acesso não autorizado.' }, { status: 403 })
+    const session = await getAdminSession()
+    if (!session.success) return NextResponse.json({ error: session.error }, { status: session.status })
 
     const declaredLength = Number(request.headers.get('content-length') ?? 0)
     if (declaredLength > 2_000) return NextResponse.json({ error: 'Pedido demasiado grande.' }, { status: 413 })

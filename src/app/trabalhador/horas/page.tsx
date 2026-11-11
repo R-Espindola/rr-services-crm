@@ -86,7 +86,7 @@ export default function WorkerHoursPage() {
   return (
     <div className="min-h-screen bg-[#F3F6FA] text-[#0B192C]">
       {/* Header Superior Moderno */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#081426]/90 backdrop-blur-xl text-white shadow-lg">
+      <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#081426]/95 text-white shadow-sm backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1550px] items-center justify-between px-6 py-4 lg:px-10">
           <Link href="/trabalhador" className="flex items-center gap-3.5 group">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00D4FF] text-sm font-black text-[#0B192C] shadow-lg shadow-[#00D4FF]/20 group-hover:scale-105 transition">R&R</span>

@@ -1,21 +1,15 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase-server'
+import { getAdminSession } from '@/lib/admin-auth'
 
 export type AssignableWorker = { user_id: string; display_name: string; active: boolean }
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string }
 
 async function getAdminClient() {
-  const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) return { success: false as const, error: 'Inicie sessão para continuar.' }
-
-  const { data: profile, error: profileError } = await supabase.from('clients')
-    .select('role').eq('auth_user_id', user.id).maybeSingle()
-  if (profileError) return { success: false as const, error: 'Não foi possível validar as permissões.' }
-  if (profile?.role !== 'admin') return { success: false as const, error: 'Apenas administradores podem gerir atribuições.' }
-  return { success: true as const, supabase }
+  const session = await getAdminSession()
+  if (!session.success) return { success: false as const, error: session.error }
+  return { success: true as const, supabase: session.supabase }
 }
 
 export async function listAssignableWorkers(): Promise<ActionResult<AssignableWorker[]>> {

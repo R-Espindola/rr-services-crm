@@ -3,7 +3,7 @@
 import 'server-only'
 import { randomBytes } from 'node:crypto'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase-server'
+import { getAdminSession } from '@/lib/admin-auth'
 
 export type WorkerRecord = {
   user_id: string
@@ -25,18 +25,6 @@ function adminClient() {
   return createSupabaseAdmin(url, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-}
-
-async function requireAdmin(): Promise<{ ok: true; userId: string } | { ok: false; error: string }> {
-  const authClient = await createClient()
-  const { data: { user }, error: authError } = await authClient.auth.getUser()
-  if (authError || !user) return { ok: false, error: 'A sua sessão terminou. Inicie sessão novamente.' }
-
-  const { data: profile, error: profileError } = await authClient.from('clients')
-    .select('role').eq('auth_user_id', user.id).maybeSingle()
-  if (profileError) return { ok: false, error: 'Não foi possível validar as permissões.' }
-  if (profile?.role !== 'admin') return { ok: false, error: 'Não tem autorização para gerir funcionários.' }
-  return { ok: true, userId: user.id }
 }
 
 function cleanText(value: unknown, min: number, max: number) {
@@ -91,8 +79,8 @@ function monthBounds(monthInput: unknown) {
 
 export async function listWorkers(monthInput?: string): Promise<ActionResult<WorkerRecord[]>> {
   try {
-    const auth = await requireAdmin()
-    if (!auth.ok) return { success: false, error: auth.error }
+    const auth = await getAdminSession()
+    if (!auth.success) return { success: false, error: auth.error }
     const admin = adminClient()
     const { data, error } = await admin.from('worker_profiles')
       .select('user_id, display_name, email, phone, job_title, active, created_at')
@@ -140,8 +128,8 @@ export async function createWorker(input: {
   name: unknown; email: unknown; phone: unknown; jobTitle: unknown; password: unknown; generatePassword: unknown
 }): Promise<ActionResult<{ worker: WorkerRecord }>> {
   try {
-    const auth = await requireAdmin()
-    if (!auth.ok) return { success: false, error: auth.error }
+    const auth = await getAdminSession()
+    if (!auth.success) return { success: false, error: auth.error }
     const name = cleanText(input.name, 2, 120)
     const email = validEmail(input.email)
     const phone = validPhone(input.phone)
@@ -193,8 +181,8 @@ export async function updateWorker(input: {
   userId: unknown; name: unknown; email: unknown; phone: unknown; jobTitle: unknown
 }): Promise<ActionResult<{ worker: WorkerRecord }>> {
   try {
-    const auth = await requireAdmin()
-    if (!auth.ok) return { success: false, error: auth.error }
+    const auth = await getAdminSession()
+    if (!auth.success) return { success: false, error: auth.error }
     const userId = cleanText(input.userId, 36, 36)
     const name = cleanText(input.name, 2, 120)
     const email = validEmail(input.email)
@@ -234,8 +222,8 @@ export async function updateWorker(input: {
 
 export async function setWorkerActive(userIdInput: unknown, active: unknown): Promise<ActionResult<{ userId: string; active: boolean }>> {
   try {
-    const auth = await requireAdmin()
-    if (!auth.ok) return { success: false, error: auth.error }
+    const auth = await getAdminSession()
+    if (!auth.success) return { success: false, error: auth.error }
     const userId = cleanText(userIdInput, 36, 36)
     if (!userId || !/^[0-9a-f-]{36}$/i.test(userId) || typeof active !== 'boolean') {
       return { success: false, error: 'Pedido inválido.' }
@@ -251,11 +239,11 @@ export async function setWorkerActive(userIdInput: unknown, active: unknown): Pr
 
 export async function removeWorker(userIdInput: unknown): Promise<ActionResult<{ userId: string }>> {
   try {
-    const auth = await requireAdmin()
-    if (!auth.ok) return { success: false, error: auth.error }
+    const auth = await getAdminSession()
+    if (!auth.success) return { success: false, error: auth.error }
     const userId = cleanText(userIdInput, 36, 36)
     if (!userId || !/^[0-9a-f-]{36}$/i.test(userId)) return { success: false, error: 'Pedido inválido.' }
-    if (userId === auth.userId) return { success: false, error: 'Não pode remover a sua própria conta de administrador.' }
+    if (userId === auth.user.id) return { success: false, error: 'Não pode remover a sua própria conta de administrador.' }
 
     // Deleting the Auth account cascades to worker_profiles; order assignments are set null by the FK.
     const admin = adminClient()

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
 export interface Product {
@@ -185,9 +186,9 @@ export default function StoreAdminPage() {
                   return (
                     <tr key={prod.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-4 px-6 font-bold text-[#0B192C] flex items-center gap-3">
-                        <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-lg overflow-hidden border border-slate-200 flex-shrink-0">
+                        <div className="relative w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-lg overflow-hidden border border-slate-200 flex-shrink-0">
                           {prod.image_url ? (
-                            <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover" />
+                            <Image src={prod.image_url} alt={prod.name} fill unoptimized sizes="40px" className="object-cover" />
                           ) : (
                             '🧴'
                           )}

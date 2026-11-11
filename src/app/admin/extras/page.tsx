@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 
 export interface ExtraService {
@@ -190,10 +191,13 @@ export default function ExtrasCatalogPage() {
               }`}
             >
               <div className="relative h-40 bg-slate-100 overflow-hidden">
-                <img 
-                  src={item.image_url || "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=85"} 
-                  alt={item.name} 
-                  className="w-full h-full object-cover" 
+                <Image
+                  src={item.image_url || "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=85"}
+                  alt={item.name}
+                  fill
+                  unoptimized
+                  sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                  className="object-cover"
                 />
                 <span className="absolute top-3 left-3 bg-[#0B192C]/80 backdrop-blur-xs text-[10px] font-black text-white px-2.5 py-1 rounded-md uppercase">
                   {item.category}
@@ -292,7 +296,7 @@ export default function ExtrasCatalogPage() {
                 <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Tipo de Preço</label>
                 <select
                   value={priceType}
-                  onChange={(e) => setPriceType(e.target.value as any)}
+                  onChange={(e) => setPriceType(e.target.value as ExtraService['price_type'])}
                   className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#00D4FF] bg-slate-50 font-medium"
                 >
                   <option value="fixed">Preço Fixo</option>

@@ -1,13 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ClientOption, Order as ServiceBooking } from './page'
-import { AssignableWorker } from './actions'
+import type { Order as ServiceBooking } from './page'
+import type { AssignableWorker } from './actions'
+
+function errorMessage(error: unknown) {
+  return error && typeof error === 'object' && 'message' in error
+    ? String(error.message)
+    : String(error)
+}
 
 interface BookingDetailsModalProps {
   booking: ServiceBooking
-  clients?: ClientOption[]
   workers?: AssignableWorker[]
   onClose: () => void
   onUpdated: () => void
@@ -15,32 +20,20 @@ interface BookingDetailsModalProps {
 
 export default function BookingDetailsModal({
   booking,
-  clients = [],
   workers = [],
   onClose,
   onUpdated
 }: BookingDetailsModalProps) {
-  const [editDate, setEditDate] = useState('')
-  const [editTime, setEditTime] = useState('')
-  const [editStatus, setEditStatus] = useState<string>('pending')
-  const [editPaymentStatus, setEditPaymentStatus] = useState<string>('pending')
-  const [editWorkerUserId, setEditWorkerUserId] = useState<string>('')
+  const scheduledDate = new Date(booking.scheduled_date)
+  const hasScheduledDate = !Number.isNaN(scheduledDate.getTime())
+  const [editDate, setEditDate] = useState(hasScheduledDate ? scheduledDate.toISOString().slice(0, 10) : '')
+  const [editTime, setEditTime] = useState(hasScheduledDate ? scheduledDate.toTimeString().slice(0, 5) : '')
+  const [editStatus, setEditStatus] = useState(booking.status || 'pending')
+  const [editPaymentStatus, setEditPaymentStatus] = useState(booking.payment_status || 'pending')
+  const [editWorkerUserId, setEditWorkerUserId] = useState(booking.worker_user_id || '')
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (booking) {
-      const dateObj = new Date(booking.scheduled_date)
-      if (!isNaN(dateObj.getTime())) {
-        setEditDate(dateObj.toISOString().split('T')[0])
-        setEditTime(dateObj.toTimeString().substring(0, 5))
-      }
-      setEditStatus(booking.status || 'pending')
-      setEditPaymentStatus(booking.payment_status || 'pending')
-      setEditWorkerUserId(booking.worker_user_id || '')
-    }
-  }, [booking])
 
   const handleUpdate = async () => {
     setUpdating(true)
@@ -67,8 +60,8 @@ export default function BookingDetailsModal({
 
       await onUpdated()
       onClose()
-    } catch (err: any) {
-      setErrorMsg(`Erro inesperado: ${err.message || String(err)}`)
+    } catch (err: unknown) {
+      setErrorMsg(`Erro inesperado: ${errorMessage(err)}`)
     } finally {
       setUpdating(false)
     }
@@ -96,8 +89,8 @@ export default function BookingDetailsModal({
 
       await onUpdated()
       onClose()
-    } catch (err: any) {
-      setErrorMsg(`Erro inesperado: ${err.message || String(err)}`)
+    } catch (err: unknown) {
+      setErrorMsg(`Erro inesperado: ${errorMessage(err)}`)
     } finally {
       setDeleting(false)
     }

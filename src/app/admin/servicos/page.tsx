@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import ServiceMetrics from './ServiceMetrics';
 import BookingDetailsModal from './BookingDetailsModal';
@@ -104,16 +104,8 @@ export default function AgendaPage() {
   const [totalAmount, setTotalAmount] = useState('60.00');
   const [notes, setNotes] = useState('');
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
-  const [pricingFrequency, setPricingFrequency] = useState('semanal');
   const [typology, setTypology] = useState('');
   const [, setMatchedPrice] = useState(false);
-
-  useEffect(() => {
-    fetchOrders();
-    fetchClients();
-    fetchWorkers();
-    fetchPricingRules();
-  }, []);
 
   async function fetchPricingRules() {
     try {
@@ -138,7 +130,6 @@ export default function AgendaPage() {
 
   function handlePricingSelection(nextServiceType: string, nextFrequency: string, requestedTypology?: string) {
     setServiceType(nextServiceType);
-    setPricingFrequency(nextFrequency);
     const options = latestPricingRules(pricingRules, nextServiceType, nextFrequency);
     const nextRule = options.find((rule) => rule.typology === requestedTypology) ?? options[0];
     setTypology(nextRule?.typology ?? '');
@@ -152,7 +143,6 @@ export default function AgendaPage() {
   }
 
   async function fetchWorkers() {
-    setWorkersLoading(true);
     try {
       const result = await listAssignableWorkers();
       if (result.success) setWorkersList(result.data);
@@ -164,8 +154,7 @@ export default function AgendaPage() {
     }
   }
 
-  async function fetchOrders() {
-    setLoading(true);
+  const fetchOrders = useCallback(async () => {
     const { data, error } = await supabase
       .from('orders')
       .select('*, clients(name, phone)')
@@ -175,6 +164,11 @@ export default function AgendaPage() {
       setOrders(data as Order[]);
     }
     setLoading(false);
+  }, [sortOrder]);
+
+  async function refreshOrders() {
+    setLoading(true);
+    await fetchOrders();
   }
 
   async function fetchClients() {
@@ -187,6 +181,16 @@ export default function AgendaPage() {
       setClientsList(data as ClientOption[]);
     }
   }
+
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => {
+      void fetchOrders();
+      void fetchClients();
+      void fetchWorkers();
+      void fetchPricingRules();
+    }, 0);
+    return () => window.clearTimeout(initialLoad);
+  }, [fetchOrders]);
 
   function handleOpenAddModalForDate(dateStr?: string, timeStr?: string) {
     if (dateStr) setScheduledDate(dateStr);
@@ -238,7 +242,7 @@ export default function AgendaPage() {
       setNotes('');
       setFrequency('once');
       setOccurrences(6);
-      await fetchOrders();
+      await refreshOrders();
     } catch {
       setAssignmentFeedback({ message: 'Ocorreu um erro ao agendar as limpezas. Tente novamente.', error: true });
     } finally {
@@ -796,13 +800,13 @@ export default function AgendaPage() {
       {/* MODAL DE DETALHES / EDIÇÃO DE MARCAÇÃO */}
       {selectedBooking && (
         <BookingDetailsModal
+          key={selectedBooking.id}
           booking={selectedBooking}
-          clients={clientsList}
           workers={workersList}
           onClose={() => setSelectedBooking(null)}
           onUpdated={() => {
             setSelectedBooking(null);
-            fetchOrders();
+            void refreshOrders();
           }}
         />
       )}
@@ -871,7 +875,7 @@ export default function AgendaPage() {
                   <label className="block text-xs font-bold uppercase text-slate-700 mb-1">Frequência *</label>
                   <select
                     value={frequency}
-                    onChange={(e) => setFrequency(e.target.value as any)}
+                    onChange={(e) => setFrequency(e.target.value as 'once' | 'weekly' | 'biweekly')}
                     className="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-[#00D4FF]"
                   >
                     <option value="once">Pontual (Apenas 1 vez)</option>

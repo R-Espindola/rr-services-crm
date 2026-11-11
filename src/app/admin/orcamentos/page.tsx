@@ -106,8 +106,6 @@ export default function QuotesPage() {
   const [estimatedHours, setEstimatedHours] = useState('3')
   const [notes, setNotes] = useState('')
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
-  const [pricingRulesLoading, setPricingRulesLoading] = useState(true)
-  const [pricingRulesError, setPricingRulesError] = useState(false)
   const [priceMatched, setPriceMatched] = useState(false)
 
   useEffect(() => {
@@ -135,9 +133,7 @@ export default function QuotesPage() {
 
     if (quotesData) setQuotes(quotesData as Quote[])
     if (clientsData) setClients(clientsData as Client[])
-    if (pricingError) {
-      setPricingRulesError(true)
-    } else {
+    if (!pricingError) {
       const rules = (pricingData ?? []) as PricingRule[]
       setPricingRules(rules)
       const initialRule = currentRulesFor(rules, 'Limpeza Residencial', 'semanal').find((rule) => rule.typology === 'T2')
@@ -150,7 +146,6 @@ export default function QuotesPage() {
         setPriceMatched(true)
       }
     }
-    setPricingRulesLoading(false)
     setLoading(false)
   }
 

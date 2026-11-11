@@ -49,8 +49,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Erro no webhook do WhatsApp:', err);
-    return NextResponse.json({ error: err.message }, { status: 400 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Pedido inválido.' }, { status: 400 });
   }
 }

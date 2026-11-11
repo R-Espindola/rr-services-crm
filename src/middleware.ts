@@ -39,13 +39,7 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  const userEmail = user.email?.toLowerCase() || ''
-
-  const { data: profile, error: profileError } = await supabase
-    .from('clients')
-    .select('role')
-    .eq('auth_user_id', user.id)
-    .maybeSingle()
+  const { data: isAdmin, error: adminError } = await supabase.rpc('is_admin')
 
   const { data: workerProfile, error: workerError } = await supabase
     .from('worker_profiles')
@@ -53,8 +47,7 @@ export async function middleware(request: NextRequest) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  // BLINDAGEM: Se for o seu e-mail de admin, força o papel de admin independentemente da tabela
-  const role = userEmail === 'rrservices.pt@gmail.com' || (!profileError && profile?.role === 'admin')
+  const role = !adminError && isAdmin === true
     ? 'admin'
     : !workerError && workerProfile?.active
       ? 'worker'
