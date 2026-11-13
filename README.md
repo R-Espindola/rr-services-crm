@@ -34,3 +34,15 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Portal do trabalhador
+
+Antes de disponibilizar o controlo de turnos, fotografias de ocorrências ou notificações push, aplique a migration `supabase/migrations/20261113000000_worker_shift_incident_push.sql` no projeto Supabase.
+
+As notificações push requerem HTTPS (exceto em `localhost`) e chaves VAPID. Gere um par de chaves com `npx web-push generate-vapid-keys` e configure:
+
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY`: chave pública, disponível no browser.
+- `VAPID_PRIVATE_KEY`: chave privada, apenas no servidor.
+- `VAPID_SUBJECT`: endereço de contacto VAPID, por exemplo `mailto:suporte@exemplo.pt`.
+
+Nunca publiques a chave privada nem a coloques numa variável `NEXT_PUBLIC_*`. Os trabalhadores ativam as notificações no painel; os avisos são enviados quando uma limpeza lhes é atribuída, alterada, cancelada ou removida. Lembretes com hora marcada exigem um serviço agendador e não são enviados por esta implementação. Em iPhone/iPad, o portal deve estar adicionado ao ecrã principal para permitir notificações push.

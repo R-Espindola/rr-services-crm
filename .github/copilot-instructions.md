@@ -5,6 +5,7 @@
 - Aplicação web em **Next.js 16 (App Router)**, **React 19** e **TypeScript 5** com `strict: true`.
 - **Tailwind CSS 4** para estilos e **Lucide React** para ícones; a fonte da aplicação é Geist.
 - **Supabase** para autenticação e persistência, usando `@supabase/ssr` e `@supabase/supabase-js`.
+- **Web Push** no servidor via `web-push`, com service worker e chaves VAPID configuradas por ambiente.
 - O alias `@/*` aponta para `src/*`. Mantém as importações existentes com este alias.
 - `next.config.ts` configura o loader CSS do Tailwind via Turbopack.
 - Scripts disponíveis: `npm run dev`, `npm run build`, `npm run start` e `npm run lint`. Não existe atualmente um script de testes no `package.json`.
@@ -14,14 +15,14 @@
 - `src/app/`: rotas, layouts, páginas e componentes associados às funcionalidades (App Router).
   - `admin/`: painel e gestão de serviços, agenda, clientes, funcionários, orçamentos, loja, extras e configurações.
   - `cliente/`: portal do cliente, incluindo pedidos, perfil, serviços extra e loja; `client-theme.ts` gere os temas do portal.
-  - `trabalhador/`: portal do trabalhador, agenda, registo de horas e perfil.
-  - `api/`: Route Handlers, incluindo orçamentos e webhooks.
+  - `trabalhador/`: portal do trabalhador, agenda, registo de horas por limpeza, controlo de turno/pausas, perfil e ativação de notificações push.
+  - `api/`: Route Handlers, incluindo orçamentos, webhooks e gestão autenticada de subscrições push do trabalhador.
   - `auth/callback/`: callback de autenticação.
   - As páginas públicas e legais incluem `page.tsx`, `login/`, `termos/` e `privacidade/`.
-- `src/lib/`: integrações reutilizáveis. `supabase.ts` cria o cliente de browser; `supabase-server.ts` cria o cliente de servidor com cookies; `admin-auth.ts` valida a sessão e a autorização administrativa.
+- `src/lib/`: integrações reutilizáveis. `supabase.ts` cria o cliente de browser; `supabase-server.ts` cria o cliente de servidor com cookies; `admin-auth.ts` valida a sessão e a autorização administrativa; `worker-push-server.ts` envia notificações push apenas no servidor; `push-endpoint.ts` valida endpoints de serviços push autorizados.
 - `src/middleware.ts`: atualiza a sessão Supabase e encaminha utilizadores conforme o papel e a rota.
 - `supabase/migrations/` e `database/migrations/`: alterações versionadas à base de dados e às políticas/funcionalidades associadas.
-- `public/`: recursos estáticos.
+- `public/`: recursos estáticos, incluindo `sw.js`, `manifest.webmanifest` e o ícone da aplicação usados pelo Web Push.
 - Atualmente não existe uma pasta `src/components/`: os componentes estão junto das rotas que os usam. Mantém essa proximidade e extrai componentes partilhados apenas quando houver reutilização real.
 
 ## Arquitetura e padrões de código
@@ -42,6 +43,7 @@
 - Preserva e respeita RLS em todas as consultas. Não desatives políticas nem alargues permissões para contornar um problema de UI; confirma as migrations e o modelo de autorização antes de alterar acessos.
 - Valida a identidade e o papel no servidor para cada operação protegida. Reutiliza `getAdminSession()` para operações administrativas em vez de confiar apenas no middleware ou no cliente.
 - A chave `SUPABASE_SERVICE_ROLE_KEY` é exclusivamente de servidor; nunca a exponhas em componentes de cliente, respostas HTTP, logs ou variáveis `NEXT_PUBLIC_*`.
+- `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT` também são exclusivamente de servidor. A chave `NEXT_PUBLIC_VAPID_PUBLIC_KEY` pode ser exposta ao browser. Valida endpoints push contra a lista de serviços autorizados antes de enviar notificações.
 - Mantém segredos em variáveis de ambiente. Não incluas credenciais, tokens ou dados pessoais em código, commits ou mensagens de erro.
 - Para dados de utilizador, restringe consultas ao utilizador autenticado e não uses valores fornecidos pelo cliente para escolher ou aceder à conta de terceiros.
 

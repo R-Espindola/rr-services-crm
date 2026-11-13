@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import ServiceMetrics from './ServiceMetrics';
 import BookingDetailsModal from './BookingDetailsModal';
-import { agendarLimpezasRecorrentes, atribuirFuncionarioAMarcacao, listAssignableWorkers, type AssignableWorker } from './actions';
+import { agendarLimpezasRecorrentes, atribuirFuncionarioAMarcacao, deleteBooking, listAssignableWorkers, updateOrderStatus, type AssignableWorker } from './actions';
 
 export interface Order {
   id: string;
@@ -16,6 +16,8 @@ export interface Order {
   payment_status?: string | null;
   worker_user_id?: string | null;
   notes?: string;
+  worker_notes?: string | null;
+  incident_photos?: string[] | null;
   clients?: {
     name: string;
     phone: string;
@@ -232,7 +234,7 @@ export default function AgendaPage() {
 
       const count = result.data.count;
       setAssignmentFeedback({
-        message: `${count} ${count === 1 ? 'limpeza agendada' : 'limpezas agendadas'} com sucesso!`,
+        message: `${count} ${count === 1 ? 'limpeza agendada' : 'limpezas agendadas'} com sucesso!${result.data.notificationWarning ? ` ${result.data.notificationWarning}` : ''}`,
         error: false,
       });
       setShowAddModal(false);
@@ -251,15 +253,14 @@ export default function AgendaPage() {
   }
 
   async function handleStatusChange(id: string, newStatus: string) {
-    const { error } = await supabase
-      .from('orders')
-      .update({ status: newStatus })
-      .eq('id', id);
-
-    if (error) {
-      alert('Erro ao atualizar estado: ' + error.message);
+    const result = await updateOrderStatus(id, newStatus);
+    if (!result.success) {
+      alert(result.error);
     } else {
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
+      setAssignmentFeedback(result.data.notificationWarning
+        ? { message: result.data.notificationWarning, error: true }
+        : null);
     }
   }
 
@@ -290,8 +291,8 @@ export default function AgendaPage() {
         ? { ...order, worker_user_id: result.data.workerUserId }
         : order));
       setAssignmentFeedback({
-        message: result.data.workerName ? `Marcação atribuída a ${result.data.workerName}.` : 'A marcação ficou sem funcionário atribuído.',
-        error: false,
+        message: `${result.data.workerName ? `Marcação atribuída a ${result.data.workerName}.` : 'A marcação ficou sem funcionário atribuído.'}${result.data.notificationWarning ? ` ${result.data.notificationWarning}` : ''}`,
+        error: Boolean(result.data.notificationWarning),
       });
     } catch {
       setAssignmentFeedback({ message: 'Não foi possível guardar a atribuição. Tente novamente.', error: true });
@@ -306,12 +307,14 @@ export default function AgendaPage() {
       return;
     }
 
-    const { error } = await supabase.from('orders').delete().eq('id', id);
-
-    if (error) {
-      alert('Erro ao eliminar limpeza: ' + error.message);
+    const result = await deleteBooking(id);
+    if (!result.success) {
+      alert(result.error);
     } else {
       setOrders(prev => prev.filter(o => o.id !== id));
+      if (result.data.notificationWarning) {
+        setAssignmentFeedback({ message: result.data.notificationWarning, error: true });
+      }
     }
   }
 

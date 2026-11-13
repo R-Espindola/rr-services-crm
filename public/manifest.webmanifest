@@ -1,0 +1,17 @@
+{
+  "name": "R&R Services - Portal do Trabalhador",
+  "short_name": "R&R Trabalhador",
+  "start_url": "/trabalhador",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F5F7FA",
+  "theme_color": "#0B192C",
+  "icons": [
+    {
+      "src": "/rr-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import WorkerPushSubscription from './WorkerPushSubscription'
 
 type ClientInfo = {
   name: string | null
@@ -120,6 +121,9 @@ export default function WorkerDashboardPage() {
             <Link href="/trabalhador/agenda" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
               <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-500">📅</span>Agenda de hoje
             </Link>
+            <Link href="/trabalhador/turno" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-500">⏱️</span>Turno e pausas
+            </Link>
             <Link href="/trabalhador/horas" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
               <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-500">⏱️</span>Horas trabalhadas
             </Link>
@@ -183,7 +187,7 @@ export default function WorkerDashboardPage() {
           </section>
 
           {/* Cartões de Navegação Moderna */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
             <Link href="/trabalhador/agenda" className="group relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white p-7 shadow-sm hover:shadow-xl hover:border-[#00D4FF] transition-all duration-300">
               <div className="absolute top-0 right-0 h-32 w-32 bg-sky-50 rounded-bl-full -z-0 group-hover:scale-110 transition-transform duration-300" />
               <span className="relative z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0B192C] text-[#00D4FF] text-xl font-black shadow-md">🗓️</span>
@@ -204,6 +208,16 @@ export default function WorkerDashboardPage() {
               </div>
             </Link>
 
+            <Link href="/trabalhador/turno" className="group relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white p-7 shadow-sm hover:shadow-xl hover:border-[#00D4FF] transition-all duration-300">
+              <div className="absolute top-0 right-0 h-32 w-32 bg-violet-50 rounded-bl-full -z-0 group-hover:scale-110 transition-transform duration-300" />
+              <span className="relative z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0B192C] text-[#00D4FF] text-xl font-black shadow-md">⏱️</span>
+              <h3 className="relative z-10 mt-5 text-base font-black text-slate-900 group-hover:text-[#0B192C] transition">Turno e Pausas</h3>
+              <p className="relative z-10 mt-2 text-xs leading-relaxed text-slate-500">Registe o início e fim do turno, pausas e tempo efetivo de trabalho.</p>
+              <div className="relative z-10 mt-5 flex items-center gap-1.5 text-xs font-bold text-[#0B192C] group-hover:translate-x-1 transition-transform">
+                Controlar turno →
+              </div>
+            </Link>
+
             <Link href="/trabalhador/perfil" className="group relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white p-7 shadow-sm hover:shadow-xl hover:border-[#00D4FF] transition-all duration-300">
               <div className="absolute top-0 right-0 h-32 w-32 bg-emerald-50 rounded-bl-full -z-0 group-hover:scale-110 transition-transform duration-300" />
               <span className="relative z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0B192C] text-[#00D4FF] text-xl font-black shadow-md">🔒</span>
@@ -214,6 +228,8 @@ export default function WorkerDashboardPage() {
               </div>
             </Link>
           </div>
+
+          <WorkerPushSubscription />
 
           {/* Secção de Destaque Operacional */}
           <div className="rounded-[32px] border border-slate-200/80 bg-white p-8 shadow-sm">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -27,8 +28,11 @@ type Order = {
   paused_at: string | null
   paused_duration_seconds: number
   worker_checklist: ChecklistItem[] | null
+  incident_photos: string[] | null
   clients: ClientInfo | ClientInfo[] | null
 }
+
+type IncidentPhoto = { path: string; url: string }
 
 type VisitSummary = {
   order: Order
@@ -126,6 +130,7 @@ export default function WorkerAgendaPage() {
   const [customTaskInput, setCustomTaskInput] = useState<Record<string, string>>({})
   const [incidentNotes, setIncidentNotes] = useState<Record<string, string>>({})
   const [savedIncidentNotes, setSavedIncidentNotes] = useState<Record<string, boolean>>({})
+  const [incidentPhotoUrls, setIncidentPhotoUrls] = useState<Record<string, IncidentPhoto[]>>({})
   const [visitSummary, setVisitSummary] = useState<VisitSummary | null>(null)
 
   const toggleChecklistOpen = (orderId: string) => {
@@ -184,7 +189,7 @@ export default function WorkerAgendaPage() {
       }
 
       const { data, error: ordersError } = await supabase.from('orders')
-        .select('id, client_id, service_type, scheduled_date, status, notes, worker_notes, started_at, completed_at, duration_minutes, paused_at, paused_duration_seconds, worker_checklist, clients(name, address, phone, latitude, longitude)')
+        .select('id, client_id, service_type, scheduled_date, status, notes, worker_notes, started_at, completed_at, duration_minutes, paused_at, paused_duration_seconds, worker_checklist, incident_photos, clients(name, address, phone, latitude, longitude)')
         .eq('worker_user_id', user.id)
         .gte('scheduled_date', start.toISOString())
         .lt('scheduled_date', end.toISOString())
@@ -197,6 +202,22 @@ export default function WorkerAgendaPage() {
         worker_checklist: order.worker_checklist?.length ? order.worker_checklist : defaultTasks(),
       }))
       setOrders(rows)
+      let photoLoadFailed = false
+      const photoGroups = await Promise.all(rows.map(async (order) => {
+        const signedPhotos = await Promise.all((order.incident_photos ?? []).map(async (path) => {
+          const { data: signedPhoto, error: signedPhotoError } = await supabase.storage
+            .from('worker-cleaning-photos')
+            .createSignedUrl(path, 60 * 60)
+          if (signedPhotoError || !signedPhoto) {
+            photoLoadFailed = true
+            return null
+          }
+          return { path, url: signedPhoto.signedUrl }
+        }))
+        return [order.id, signedPhotos.filter((photo): photo is IncidentPhoto => photo !== null)] as const
+      }))
+      setIncidentPhotoUrls(Object.fromEntries(photoGroups))
+      if (photoLoadFailed) setError('Algumas fotografias não puderam ser carregadas. Atualize a agenda para tentar novamente.')
 
     } catch {
       setError('Não foi possível carregar a agenda. Tente novamente dentro de momentos.')
@@ -280,6 +301,85 @@ export default function WorkerAgendaPage() {
     } catch {
       setSavedIncidentNotes((current) => ({ ...current, [order.id]: false }))
       setError('Não foi possível guardar a observação. Tente novamente.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function uploadIncidentPhoto(order: Order, file: File | null) {
+    if (!file) return
+    if ((order.incident_photos?.length ?? 0) >= 10) {
+      setError('O limite é de 10 fotografias de ocorrência por limpeza.')
+      return
+    }
+    const extensionByType: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/heic': 'heic',
+    }
+    const extension = extensionByType[file.type]
+    if (!extension || file.size > 8 * 1024 * 1024) {
+      setError('Escolha uma foto JPG, PNG, WebP ou HEIC com, no máximo, 8 MB.')
+      return
+    }
+
+    setBusy(`photo-${order.id}`)
+    setError('')
+    setNotice('')
+    let uploadedPath: string | null = null
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) throw new Error('A sua sessão terminou. Inicie sessão novamente.')
+
+      const photoPath = `${user.id}/${order.id}/incident/${crypto.randomUUID()}.${extension}`
+      uploadedPath = photoPath
+      const { error: uploadError } = await supabase.storage
+        .from('worker-cleaning-photos')
+        .upload(photoPath, file, { contentType: file.type, upsert: false })
+      if (uploadError) throw uploadError
+
+      const { error: attachError } = await supabase.rpc('worker_attach_photo', {
+        p_order_id: order.id,
+        p_photo_type: 'incident',
+        p_storage_path: photoPath,
+      })
+      if (attachError) {
+        const { error: cleanupError } = await supabase.storage
+          .from('worker-cleaning-photos')
+          .remove([photoPath])
+        if (cleanupError) console.error('Não foi possível remover uma fotografia de ocorrência não associada:', cleanupError.message)
+        uploadedPath = null
+        throw attachError
+      }
+
+      const savedPath = photoPath
+      uploadedPath = null
+      setOrders((current) => current.map((item) => item.id === order.id
+        ? { ...item, incident_photos: [...(item.incident_photos ?? []), savedPath] }
+        : item))
+      const { data: signedPhoto, error: signedPhotoError } = await supabase.storage
+        .from('worker-cleaning-photos')
+        .createSignedUrl(savedPath, 60 * 60)
+      if (signedPhotoError || !signedPhoto) {
+        setNotice('Fotografia guardada. Não foi possível criar a pré-visualização; atualize a agenda para a consultar.')
+      } else {
+        setIncidentPhotoUrls((current) => ({
+          ...current,
+          [order.id]: [...(current[order.id] ?? []), { path: savedPath, url: signedPhoto.signedUrl }],
+        }))
+        setNotice('Fotografia de ocorrência guardada.')
+      }
+    } catch (cause) {
+      if (uploadedPath) {
+        const { error: cleanupError } = await supabase.storage
+          .from('worker-cleaning-photos')
+          .remove([uploadedPath])
+        if (cleanupError) console.error('Não foi possível remover uma fotografia de ocorrência não associada:', cleanupError.message)
+      }
+      setError(cause instanceof Error && cause.message !== 'Failed to fetch'
+        ? cause.message
+        : 'Não foi possível guardar a fotografia. Verifique a ligação e tente novamente.')
     } finally {
       setBusy(null)
     }
@@ -380,6 +480,9 @@ export default function WorkerAgendaPage() {
             <Link href="/trabalhador/agenda" className="flex h-12 items-center gap-3.5 rounded-2xl bg-[#0B192C] px-4 text-xs font-bold text-white shadow-xl shadow-[#0B192C]/15">
               <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-[#00D4FF] text-[#0B192C] text-xs font-black">📅</span>Agenda de hoje
               <span className="ml-auto h-2 w-2 rounded-full bg-[#00D4FF]" />
+            </Link>
+            <Link href="/trabalhador/turno" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-500">⏱️</span>Turno e pausas
             </Link>
             <Link href="/trabalhador/horas" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
               <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-slate-500">⏱️</span>Horas trabalhadas
@@ -727,6 +830,39 @@ export default function WorkerAgendaPage() {
                               >
                                 {busy === `notes-${order.id}` ? 'A guardar...' : 'Guardar observação'}
                               </button>
+                            </div>
+                            <div className="mt-4 border-t border-amber-200 pt-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <h5 className="text-xs font-black text-[#0B192C]">Fotografias de ocorrência</h5>
+                                  <p className="mt-1 text-[11px] text-slate-600">Até 10 fotografias · JPG, PNG, WebP ou HEIC · máximo 8 MB cada.</p>
+                                </div>
+                                <label className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-amber-300 bg-white px-4 text-xs font-bold text-amber-900 transition hover:bg-amber-50">
+                                  {busy === `photo-${order.id}` ? 'A guardar fotografia...' : 'Adicionar fotografia'}
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp,image/heic"
+                                    disabled={busy !== null}
+                                    className="sr-only"
+                                    onChange={(event) => {
+                                      void uploadIncidentPhoto(order, event.currentTarget.files?.[0] ?? null)
+                                      event.currentTarget.value = ''
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              {(incidentPhotoUrls[order.id]?.length ?? 0) > 0 && (
+                                <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                  {incidentPhotoUrls[order.id].map((photo) => (
+                                    <li key={photo.path}>
+                                      <a href={photo.url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl border border-amber-200 bg-white">
+                                        <Image src={photo.url} alt="Fotografia de ocorrência desta limpeza" width={640} height={400} unoptimized className="h-32 w-full object-cover" />
+                                        <span className="block px-2 py-1.5 text-center text-[10px] font-bold text-slate-600">Ver fotografia</span>
+                                      </a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </div>
                           </section>
                         )}

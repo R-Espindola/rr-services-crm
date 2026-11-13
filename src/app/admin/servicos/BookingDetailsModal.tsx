@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import type { Order as ServiceBooking } from './page'
-import type { AssignableWorker } from './actions'
+import { deleteBooking, updateBooking, type AssignableWorker } from './actions'
 
 function errorMessage(error: unknown) {
   return error && typeof error === 'object' && 'message' in error
@@ -34,6 +35,28 @@ export default function BookingDetailsModal({
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [incidentPhotos, setIncidentPhotos] = useState<Array<{ path: string; url: string }>>([])
+  const [photosError, setPhotosError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    async function loadIncidentPhotos() {
+      const results = await Promise.all((booking.incident_photos ?? []).map(async (path) => {
+        const { data, error } = await supabase.storage
+          .from('worker-cleaning-photos')
+          .createSignedUrl(path, 60 * 60)
+        return error || !data ? null : { path, url: data.signedUrl }
+      }))
+      if (!active) return
+      setIncidentPhotos(results.filter((photo): photo is { path: string; url: string } => photo !== null))
+      setPhotosError(results.some((photo) => photo === null) ? 'Algumas fotografias não puderam ser carregadas.' : '')
+    }
+
+    void loadIncidentPhotos().catch(() => {
+      if (active) setPhotosError('Não foi possível carregar as fotografias de ocorrência.')
+    })
+    return () => { active = false }
+  }, [booking.id, booking.incident_photos])
 
   const handleUpdate = async () => {
     setUpdating(true)
@@ -42,23 +65,22 @@ export default function BookingDetailsModal({
     try {
       const newDateTime = new Date(`${editDate}T${editTime}:00`).toISOString()
 
-      const { error } = await supabase
-        .from('orders')
-        .update({
-          scheduled_date: newDateTime,
-          status: editStatus,
-          payment_status: editPaymentStatus,
-          worker_user_id: editWorkerUserId || null
-        })
-        .eq('id', booking.id)
-
-      if (error) {
-        setErrorMsg(`Erro Supabase: ${error.message}`)
-        setUpdating(false)
+      const result = await updateBooking({
+        orderId: booking.id,
+        scheduledDate: newDateTime,
+        status: editStatus,
+        paymentStatus: editPaymentStatus,
+        workerUserId: editWorkerUserId || null,
+      })
+      if (!result.success) {
+        setErrorMsg(result.error)
         return
       }
 
       await onUpdated()
+      if (result.data.notificationWarning) {
+        window.alert(`Marcação atualizada. ${result.data.notificationWarning}`)
+      }
       onClose()
     } catch (err: unknown) {
       setErrorMsg(`Erro inesperado: ${errorMessage(err)}`)
@@ -76,18 +98,16 @@ export default function BookingDetailsModal({
     setErrorMsg(null)
 
     try {
-      const { error } = await supabase
-        .from('orders')
-        .delete()
-        .eq('id', booking.id)
-
-      if (error) {
-        setErrorMsg(`Erro ao eliminar no Supabase: ${error.message}`)
-        setDeleting(false)
+      const result = await deleteBooking(booking.id)
+      if (!result.success) {
+        setErrorMsg(result.error)
         return
       }
 
       await onUpdated()
+      if (result.data.notificationWarning) {
+        window.alert(`Marcação eliminada. ${result.data.notificationWarning}`)
+      }
       onClose()
     } catch (err: unknown) {
       setErrorMsg(`Erro inesperado: ${errorMessage(err)}`)
@@ -215,6 +235,25 @@ export default function BookingDetailsModal({
               {booking.notes || 'Sem observações adicionais registadas.'}
             </p>
           </div>
+          {(booking.worker_notes || incidentPhotos.length > 0 || photosError) && (
+            <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+              <h4 className="text-xs font-black uppercase tracking-wide text-amber-900">Ocorrências do trabalhador</h4>
+              {booking.worker_notes && <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-amber-950">{booking.worker_notes}</p>}
+              {photosError && <p role="alert" className="mt-2 text-xs font-semibold text-rose-700">{photosError}</p>}
+              {incidentPhotos.length > 0 && (
+                <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {incidentPhotos.map((photo) => (
+                    <li key={photo.path}>
+                      <a href={photo.url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl border border-amber-200 bg-white">
+                        <Image src={photo.url} alt="Fotografia de ocorrência da limpeza" width={640} height={400} unoptimized className="h-28 w-full object-cover" />
+                        <span className="block px-2 py-1.5 text-center text-[10px] font-bold text-slate-600">Ver fotografia</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
         </div>
 
         <footer className="flex flex-col-reverse sm:flex-row justify-between items-center pt-6 border-t border-slate-100 mt-6 gap-3">

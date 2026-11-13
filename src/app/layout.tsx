@@ -21,7 +21,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "R&R Services — Sistema de Gestão Operacional & Comercial",
   description: "Plataforma de gestão de serviços, agendamentos, orçamentos e loja da R&R Services.",
-
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({
