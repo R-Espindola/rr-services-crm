@@ -533,9 +533,9 @@ export default function WorkerAgendaPage() {
         </aside>
 
         {/* Conteúdo da Agenda com Calendário Interativo */}
-        <main className="min-w-0 px-6 pb-24 pt-8 sm:px-10 lg:px-12 space-y-8">
+        <main className="min-w-0 px-4 pb-28 pt-5 space-y-6 sm:px-10 sm:pt-8 lg:px-12 lg:space-y-8">
           {/* Banner da Agenda */}
-          <section className="relative isolate overflow-hidden rounded-[32px] bg-[#0B192C] p-8 text-white shadow-2xl sm:p-10">
+          <section className="relative isolate overflow-hidden rounded-[24px] bg-[#0B192C] p-4 text-white shadow-2xl sm:rounded-[32px] sm:p-6 lg:p-10">
             <div className="absolute -right-16 -top-28 -z-10 h-80 w-80 rounded-full bg-[#00D4FF]/15 blur-3xl pointer-events-none" />
             <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
               <div className="max-w-2xl">
@@ -550,18 +550,18 @@ export default function WorkerAgendaPage() {
               </button>
             </div>
             
-            <div className="mt-8 grid gap-4 border-t border-white/10 pt-6 sm:grid-cols-4">
+            <div className="mt-5 grid grid-cols-2 gap-2.5 border-t border-white/10 pt-4 lg:mt-8 lg:grid-cols-4 lg:gap-4 lg:pt-6">
               {[
                 [agendaView === 'today' ? 'Visitas do dia' : agendaView === 'week' ? 'Visitas esta semana' : 'Visitas este mês', counts.total, '📅'],
                 ['Por iniciar', counts.pending, '⏳'],
                 ['Em andamento', counts.active, '⚡'],
                 ['Concluídas', counts.completed, '✅']
               ].map(([label, value, icon]) => (
-                <div key={String(label)} className="flex items-center gap-4 bg-white/[0.05] backdrop-blur-md p-4 rounded-2xl border border-white/10 shadow-md">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-[#00D4FF] text-lg font-black">{icon}</span>
+                <div key={String(label)} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] p-3 shadow-md backdrop-blur-md lg:gap-4 lg:rounded-2xl lg:p-4">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-sm font-black text-[#00D4FF] lg:h-11 lg:w-11 lg:rounded-xl lg:text-lg">{icon}</span>
                   <div>
                     <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</span>
-                    <span className="mt-0.5 block text-lg font-black text-white">{value}</span>
+                    <span className="mt-0.5 block text-xl font-extrabold tabular-nums text-white">{value}</span>
                   </div>
                 </div>
               ))}
@@ -706,12 +706,12 @@ export default function WorkerAgendaPage() {
                 return (
                   <article key={order.id} className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm transition-all duration-300 hover:shadow-xl">
                     <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex min-w-0 gap-5">
-                        <div className="flex shrink-0 flex-col items-center justify-center rounded-xl bg-[#061121] px-3.5 py-2 text-center text-white shadow-md"><span className="text-lg font-extrabold tabular-nums text-cyan-400">{formatTime(order.scheduled_date)}</span><span className="text-[11px] text-slate-300">{new Date(order.scheduled_date).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' })}</span></div>
+                      <div className="flex min-w-0 flex-col gap-3 md:flex-row md:gap-5">
+                        <div className="flex w-full shrink-0 flex-row items-center justify-between rounded-xl bg-[#061121] px-4 py-3 text-white shadow-md md:w-28 md:flex-col md:justify-center md:px-3.5 md:py-2"><div><span className="text-lg font-extrabold tabular-nums text-cyan-400">{formatTime(order.scheduled_date)}</span><span className="ml-2 text-xs text-slate-300 md:ml-0 md:block">{new Date(order.scheduled_date).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' })}</span></div><span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide md:hidden ${status.style}`}>{status.label}</span></div>
                         <div className="min-w-0 space-y-2">
                           <div className="flex flex-wrap items-center gap-3">
                             <h3 className="text-lg font-bold text-slate-900">{client.name || 'Cliente'}</h3>
-                            <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider ${status.style}`}>{status.label}</span>
+                            <span className={`hidden rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider md:inline-flex ${status.style}`}>{status.label}</span>
                           </div>
                           <p className="text-xs font-extrabold text-slate-600">{order.service_type}</p>
                           <p className="text-xs font-semibold capitalize text-slate-400">{formatDate(order.scheduled_date)}</p>
@@ -734,14 +734,6 @@ export default function WorkerAgendaPage() {
                             </div>
                           )}
                           
-                          {client.phone && (
-                            <div className="pt-1">
-                              <a href={`tel:${client.phone}`} className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-sky-50 text-xs font-black text-sky-700 hover:bg-sky-100 transition">
-                                📞 Ligar ao cliente · {client.phone}
-                              </a>
-                            </div>
-                          )}
-
                           {order.notes?.trim() && (
                             <p className="mt-2 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-xs leading-relaxed text-amber-950 font-medium">
                               <strong>Instruções do Administrador:</strong> {order.notes}
@@ -751,16 +743,17 @@ export default function WorkerAgendaPage() {
                           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
                           {baseAddress && (
                             <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-3 lg:col-span-7">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="min-w-0"><p className="text-xs font-semibold text-slate-700">📍 {baseAddress}</p>{floorDetails && <span className="mt-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-900">🏢 Andar / Porta: {floorDetails}</span>}</div>
-                                <button type="button" onClick={() => copyAddressToClipboard(order.id, fullAddress)} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition shadow-2xs">
-                                  {copiedAddressId === order.id ? '✓ Morada copiada!' : '📋 Copiar morada'}
+                              <div className="min-w-0"><p className="break-words text-sm font-bold leading-5 text-slate-800">📍 {baseAddress}</p>{floorDetails && <span className="mt-2 inline-flex max-w-full items-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-900">🏢 Andar / Porta: {floorDetails}</span>}</div>
+                              <div className="grid grid-cols-2 gap-2 pt-1">
+                                {client.phone && <a href={`tel:${client.phone}`} className="inline-flex min-h-10 items-center justify-center gap-1 whitespace-nowrap rounded-xl bg-cyan-50 px-2 text-[11px] font-black text-cyan-800 hover:bg-cyan-100 transition">📞 Ligar · {client.phone}</a>}
+                                <button type="button" onClick={() => copyAddressToClipboard(order.id, fullAddress)} className="inline-flex min-h-10 items-center justify-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition shadow-2xs">
+                                  {copiedAddressId === order.id ? '✓ Copiada!' : '📋 Copiar morada'}
                                 </button>
                               </div>
-                              <div className="flex flex-wrap gap-2 pt-1">
-                                <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-2xs">🗺️ Google Maps</a>
-                                <a href={wazeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-2xs">🚗 Waze</a>
-                                <a href={appleMapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-2xs">🍎 Apple Maps</a>
+                              <div className="grid grid-cols-3 gap-2 pt-1">
+                                <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 transition shadow-2xs">🗺️ Maps</a>
+                                <a href={wazeUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 transition shadow-2xs">🚗 Waze</a>
+                                <a href={appleMapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 transition shadow-2xs">🍎 Apple</a>
                               </div>
                             </div>
                           )}

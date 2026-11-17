@@ -52,7 +52,7 @@ export default function WorkerLayout({ children }: Readonly<{ children: React.Re
           <div className="hidden items-center gap-2 text-sm font-bold text-[#061121] lg:flex"><House className="h-4 w-4 text-cyan-600" />Equipa operacional</div>
           <button type="button" disabled={signingOut} onClick={() => void signOut()} className="ml-auto inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-[#061121] transition hover:border-cyan-300 hover:bg-cyan-50 disabled:opacity-60 sm:px-4 sm:text-sm"><LogOut className="h-4 w-4" />{signingOut ? 'A terminar...' : 'Terminar sessão'}</button>
         </header>
-        <main className="min-w-0">{children}</main>
+        <main className="min-w-0 pb-28 lg:pb-0">{children}</main>
       </div>
 
       <nav aria-label="Navegação principal" className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t border-slate-200/80 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-[0_-8px_24px_rgba(11,25,44,0.08)] backdrop-blur-xl lg:hidden">
