@@ -17,11 +17,20 @@ interface Client {
   payment_terms?: string | null;
 }
 
+function describeSupabaseError(error: unknown) {
+  if (error instanceof Error) return JSON.stringify({ message: error.message });
+  const value = error as { message?: string; details?: string; code?: string } | null;
+  const serialized = JSON.stringify({ message: value?.message, details: value?.details, code: value?.code });
+  return serialized !== '{}' ? serialized : String(error);
+}
+
 interface Order {
   id: string;
   client_id: string;
   service_type: string;
   scheduled_date: string | null;
+  arrival_window_start?: string | null;
+  arrival_window_end?: string | null;
   total_amount: number;
   status: string;
   payment_status?: string | null;
@@ -46,6 +55,7 @@ interface ExtraService {
   titulo: string;
   desc: string;
   preco: number;
+  tipoPreco: "fixed" | "per_unit" | "quote";
   imagem: string;
 }
 
@@ -137,6 +147,7 @@ export default function ClienteDashboard() {
         .single();
 
       if (clientError || !clientData) {
+        if (clientError) console.error("Erro ao carregar perfil do cliente:", describeSupabaseError(clientError));
         setError("Perfil de cliente não encontrado.");
         setLoading(false);
         return;
@@ -147,12 +158,13 @@ export default function ClienteDashboard() {
       // 2. Carregar ordens do cliente
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
-        .select("*")
+        .select("id, client_id, service_type, scheduled_date, total_amount, status, payment_status, notes")
         .eq("client_id", clientData.id)
         .order("scheduled_date", { ascending: true });
 
       if (ordersError) {
-        setError("Erro ao carregar serviços.");
+        console.error("Erro detalhado ao carregar serviços do cliente:", describeSupabaseError(ordersError));
+        setError("Não foi possível carregar os seus serviços.");
         setLoading(false);
         return;
       }
@@ -160,11 +172,9 @@ export default function ClienteDashboard() {
       const orders = (ordersData || []) as Order[];
       const now = new Date();
 
-      const proximo = orders.find(
-        (o) =>
-          (o.status === "pending" || o.status === "in_progress") &&
-          o.scheduled_date &&
-          new Date(o.scheduled_date) >= now
+      const emAndamento = orders.find((o) => ["en_route", "in_progress"].includes(o.status));
+      const proximo = emAndamento || orders.find(
+        (o) => ["pending", "confirmed"].includes(o.status) && o.scheduled_date && new Date(o.scheduled_date) >= now
       );
       setProximoServico(proximo || null);
 
@@ -202,6 +212,7 @@ export default function ClienteDashboard() {
             id: item.id,
             titulo: item.name,
             preco: item.price_type === "quote" ? 0 : item.price || 0,
+            tipoPreco: item.price_type,
             imagem: item.image_url || "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=700&q=85",
             desc: item.description || "Sem descrição detalhada.",
           }))
@@ -227,7 +238,8 @@ export default function ClienteDashboard() {
           }))
         );
       }
-    } catch {
+    } catch (error: unknown) {
+      console.error("Erro inesperado ao carregar dados do cliente:", describeSupabaseError(error));
       setError("Erro inesperado ao carregar dados.");
     } finally {
       setLoading(false);
@@ -236,7 +248,16 @@ export default function ClienteDashboard() {
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => void carregarDados(), 0);
-    return () => window.clearTimeout(initialLoad);
+    const channel = supabase
+      .channel("client-dashboard-bookings")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
+        void carregarDados();
+      })
+      .subscribe();
+    return () => {
+      window.clearTimeout(initialLoad);
+      void supabase.removeChannel(channel);
+    };
   }, []);
 
   const extrasEscolhidos = servicosExtra.filter((item) =>
@@ -246,6 +267,7 @@ export default function ClienteDashboard() {
     (total, item) => total + item.preco,
     0
   );
+  const temExtraSobConsulta = extrasEscolhidos.some((item) => item.tipoPreco === "quote");
   const { data, horario } = proximoServico
     ? formatarDataHora(proximoServico.scheduled_date)
     : { data: "", horario: "" };
@@ -313,7 +335,7 @@ export default function ClienteDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
+      <div className="min-h-dvh overflow-x-hidden bg-[#F4F7FB] text-[#0B192C]">
         <main className="mx-auto max-w-7xl px-4 py-20 text-center text-slate-400 font-medium">
           A carregar o seu portal...
         </main>
@@ -323,10 +345,13 @@ export default function ClienteDashboard() {
 
   if (error) {
     return (
-      <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
+      <div className="min-h-dvh overflow-x-hidden bg-[#F4F7FB] text-[#0B192C]">
         <main className="mx-auto max-w-7xl px-4 py-20">
-          <div className="bg-red-50 border border-red-200 p-6 rounded-2xl text-center text-red-800 text-sm font-medium">
-            {error}
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-sm font-medium text-red-800">
+            <p>{error}</p>
+            <button type="button" onClick={() => void carregarDados()} className="mt-4 rounded-xl bg-red-700 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-red-800">
+              Tentar novamente
+            </button>
           </div>
         </main>
       </div>
@@ -336,24 +361,28 @@ export default function ClienteDashboard() {
   const nomeCurto = cliente?.name?.split(" ")[0] || "Cliente";
 
   return (
-    <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] text-[#0B192C]">
+    <div className="min-h-dvh overflow-x-hidden bg-[#F4F7FB] text-[#0B192C]">
       <main id="conteudo" className="mx-auto max-w-7xl space-y-6 px-4 py-6 pb-12 sm:space-y-8 sm:px-6 sm:py-8 lg:px-8">
         
         {/* CABEÇALHO */}
-        <section className="flex flex-col justify-between gap-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:p-8">
+        <section className="relative isolate flex flex-col justify-between gap-4 overflow-hidden rounded-3xl border border-cyan-400/20 bg-[#061121] p-6 text-white shadow-xl shadow-slate-300/30 sm:flex-row sm:items-center sm:p-8">
+          <div className="pointer-events-none absolute -right-24 -top-24 -z-10 h-72 w-72 rounded-full bg-cyan-400/20 blur-3xl" />
           <div>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-sky-800">
-              A sua área pessoal
+              ÁREA PESSOAL
             </span>
-            <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl text-[#0B192C]">
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
               Olá, {nomeCurto} 👋
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               Consulte a sua próxima visita, personalize serviços e acompanhe o estado da sua conta.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <Link href="/cliente/perfil" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold transition hover:border-[#00D4FF] hover:bg-cyan-50 shadow-xs">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <Link href="/cliente/moradas" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:border-cyan-300 hover:bg-white/15">
+              Gerir moradas
+            </Link>
+            <Link href="/cliente/perfil" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#00D4FF] px-4 py-2.5 text-xs font-black text-[#061121] transition hover:bg-cyan-300 shadow-xs">
               ⚙️ Gerir perfil e morada
             </Link>
           </div>
@@ -366,7 +395,7 @@ export default function ClienteDashboard() {
               <div>
                 <span className="text-xs font-black uppercase tracking-wider text-amber-800 bg-amber-200/60 px-2.5 py-1 rounded-full">Proposta Pendente</span>
                 <h2 className="text-base font-black text-amber-950 mt-2">Tem {orcamentosPendentes.length} orçamento(s) a aguardar aprovação</h2>
-                <p className="text-xs text-amber-900 mt-0.5">Reveza os detalhes da proposta enviada pela R&R Services.</p>
+                <p className="text-xs text-amber-900 mt-0.5">Reveja os detalhes da proposta enviada pela R&R Services.</p>
               </div>
               <Link href="/cliente/pedidos" className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition">
                 Ver Proposta →
@@ -377,24 +406,30 @@ export default function ClienteDashboard() {
 
         {/* PRÓXIMO SERVIÇO */}
         {proximoServico ? (
-          <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
-            <div className="bg-[#0B192C] p-6 text-white sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
+          <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-lg shadow-slate-200/60">
+            <div className="relative isolate overflow-hidden bg-[#0B1B34] p-6 text-white sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
+              <div className="pointer-events-none absolute -right-20 -top-24 -z-10 h-64 w-64 rounded-full bg-cyan-400/20 blur-3xl" />
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-[#00D4FF] px-3.5 py-1 text-[11px] font-black text-[#0B192C]">Próxima intervenção</span>
+                  <span className="rounded-full bg-[#00D4FF] px-3.5 py-1 text-[11px] font-black text-[#0B192C]">
+                    {proximoServico.status === "en_route" ? "Equipa a caminho" : proximoServico.status === "in_progress" ? "Em curso" : proximoServico.status === "confirmed" ? "Confirmada" : "Próxima intervenção"}
+                  </span>
                   <span className="text-xs text-slate-300 font-mono">Ref: #{proximoServico.id.substring(0, 8).toUpperCase()}</span>
                 </div>
                 <h2 className="mt-3 text-xl font-black sm:text-2xl text-white">
                   {proximoServico.service_type}
                 </h2>
-                <p className="mt-2 text-sm font-extrabold text-[#00D4FF] sm:text-base flex items-center gap-1.5">
+                  <p className="mt-2 text-sm font-extrabold text-[#00D4FF] sm:text-base flex items-center gap-1.5 tabular-nums">
                   <span>🗓️</span> {data} às {horario}
                 </p>
+                {proximoServico.arrival_window_start && proximoServico.arrival_window_end && (
+                  <p className="mt-1 text-xs font-semibold text-slate-300">Janela de chegada: {proximoServico.arrival_window_start.slice(0, 5)} – {proximoServico.arrival_window_end.slice(0, 5)}</p>
+                )}
               </div>
               <div className="mt-5 flex items-center justify-between gap-4 border-t border-white/10 pt-4 lg:mt-0 lg:block lg:text-right">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Valor da marcação</p>
-                  <p className="mt-1 text-2xl sm:text-3xl font-black text-[#00D4FF]">{formatarPreco(proximoServico.total_amount)}</p>
+                  <p className="mt-1 text-2xl font-black text-[#00D4FF] tabular-nums sm:text-3xl">{formatarPreco(proximoServico.total_amount)}</p>
                 </div>
                 <div className="mt-2">
                   {cliente?.payment_terms === 'monthly_invoice' ? (
@@ -457,7 +492,7 @@ export default function ClienteDashboard() {
             { href: "/cliente/loja", icon: "🛒", title: "Loja de produtos", text: "Manutenção em casa" },
             { href: "#apoio", icon: "☏", title: "Apoio direto", text: "Fale connosco" },
           ].map((atalho) => (
-            <a key={atalho.title} href={atalho.href} className="group rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:border-[#00D4FF] hover:shadow-lg">
+            <a key={atalho.title} href={atalho.href} className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-lg">
               <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-cyan-50 text-base text-sky-800 transition group-hover:bg-[#00D4FF]">{atalho.icon}</span>
               <h3 className="mt-3 text-xs sm:text-sm font-black text-[#0B192C]">{atalho.title}</h3>
               <p className="mt-0.5 text-[11px] text-slate-500">{atalho.text}</p>
@@ -481,6 +516,8 @@ export default function ClienteDashboard() {
                     key={star}
                     type="button"
                     onClick={() => setRating(star)}
+                    aria-label={`Avaliar com ${star} ${star === 1 ? "estrela" : "estrelas"}`}
+                    aria-pressed={star === rating}
                     className={`text-2xl transition ${star <= rating ? 'text-amber-400 scale-110' : 'text-slate-200'}`}
                   >
                     ★
@@ -511,7 +548,7 @@ export default function ClienteDashboard() {
         )}
 
         {/* SERVIÇOS ADICIONAIS / EXTRA */}
-        <section id="servicos-extra" className="scroll-mt-28 rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm space-y-6">
+        <section id="servicos-extra" className="scroll-mt-28 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8 space-y-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between border-b border-slate-100 pb-4">
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full">Personalize a visita</span>
@@ -535,6 +572,14 @@ export default function ClienteDashboard() {
             <div className="bg-slate-50 p-6 rounded-2xl text-center text-xs text-slate-400 font-bold">
               Nenhum serviço extra disponível neste momento.
             </div>
+          ) : !proximoServico ? (
+            <div className="rounded-2xl border border-sky-100 bg-sky-50 p-5 text-center">
+              <p className="text-sm font-bold text-sky-950">Agende primeiro uma visita para adicionar serviços extra.</p>
+              <p className="mt-1 text-xs text-sky-800">Assim que tiver uma limpeza marcada, poderá personalizá-la aqui.</p>
+              <Link href="/cliente/pedidos" className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl bg-[#0B192C] px-4 py-2 text-xs font-bold text-white transition hover:bg-slate-800">
+                Ver marcações
+              </Link>
+            </div>
           ) : (
             <form onSubmit={submeterPedido} className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -550,7 +595,9 @@ export default function ClienteDashboard() {
                       />
                       <span className="relative block h-36 overflow-hidden bg-slate-100">
                         <Image src={item.imagem} alt={item.titulo} fill unoptimized sizes="(min-width: 1280px) 25vw, 50vw" className="object-cover transition duration-300 hover:scale-105" />
-                        <span className="absolute right-3 top-3 rounded-xl bg-[#0B192C] px-2.5 py-1 text-xs font-black text-[#00D4FF] shadow-xs">{formatarPreco(item.preco)}</span>
+                        <span className="absolute right-3 top-3 rounded-xl bg-[#0B192C] px-2.5 py-1 text-xs font-black text-[#00D4FF] shadow-xs">
+                          {item.tipoPreco === "quote" ? "Sob consulta" : item.tipoPreco === "per_unit" ? `${formatarPreco(item.preco)} / unidade` : formatarPreco(item.preco)}
+                        </span>
                         {selecionado && <span className="absolute left-3 top-3 rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white shadow-xs">Selecionado ✓</span>}
                       </span>
                       <span className="flex flex-1 flex-col p-4">
@@ -584,10 +631,10 @@ export default function ClienteDashboard() {
                     <div>
                       <p className="text-xs font-black uppercase text-slate-400">Resumo do acréscimo</p>
                       <p className="mt-2 text-xs font-semibold text-slate-600">{extraSelecionado.length} {extraSelecionado.length === 1 ? "extra selecionado" : "extras selecionados"}</p>
-                      <p className="mt-1 text-xs font-semibold text-slate-600">Valor extra <span className="float-right font-black text-[#0B192C]">{formatarPreco(totalExtras)}</span></p>
+                      <p className="mt-1 text-xs font-semibold text-slate-600">Valor extra <span className="float-right font-black text-[#0B192C]">{temExtraSobConsulta ? "A confirmar" : formatarPreco(totalExtras)}</span></p>
                       <div className="my-2.5 border-t border-slate-100" />
                       <p className="text-xs font-bold text-[#0B192C]">Total estimado da visita</p>
-                      <p className="mt-0.5 text-xl font-black text-[#00D4FF]">{formatarPreco((proximoServico?.total_amount || 0) + totalExtras)}</p>
+                      <p className="mt-0.5 text-xl font-black text-[#00D4FF]">{temExtraSobConsulta ? "A confirmar" : formatarPreco((proximoServico?.total_amount || 0) + totalExtras)}</p>
                     </div>
                     <button 
                       type="submit" 

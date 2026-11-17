@@ -1,113 +1,33 @@
 'use client'
 
+import { ArrowUpRight, CheckCircle2, ClipboardList, Clock3, Route } from 'lucide-react'
 import { Order as ServiceBooking } from './page'
+
+type MetricFilter = 'all' | 'pending' | 'active' | 'completed'
 
 interface ServiceMetricsProps {
   bookings: ServiceBooking[]
+  activeFilter: MetricFilter
+  onFilterChange: (filter: MetricFilter) => void
 }
 
-export default function ServiceMetrics({ bookings }: ServiceMetricsProps) {
-  const totalBookings = bookings.length
+export default function ServiceMetrics({ bookings, activeFilter, onFilterChange }: ServiceMetricsProps) {
+  const metrics: Array<{ filter: MetricFilter; label: string; value: number; detail: string; icon: typeof ClipboardList; tone: string }> = [
+    { filter: 'all', label: 'Total Serviços', value: bookings.length, detail: 'Todas as marcações', icon: ClipboardList, tone: 'text-cyan-700 bg-cyan-50' },
+    { filter: 'pending', label: 'Pendentes', value: bookings.filter((booking) => booking.status === 'pending').length, detail: 'Por iniciar', icon: Clock3, tone: 'text-amber-700 bg-amber-50' },
+    { filter: 'active', label: 'Ativos hoje / A caminho', value: bookings.filter((booking) => booking.status === 'en_route' || booking.status === 'in_progress').length, detail: 'Em deslocação ou execução', icon: Route, tone: 'text-blue-700 bg-blue-50' },
+    { filter: 'completed', label: 'Concluídos', value: bookings.filter((booking) => booking.status === 'completed').length, detail: 'Serviços finalizados', icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50' },
+  ]
 
-  const getAmount = (b: ServiceBooking) => {
-    return b.total_amount && b.total_amount > 0 ? b.total_amount : 60
-  }
-
-  const totalRevenueAll = bookings.reduce((acc, item) => acc + getAmount(item), 0)
-
-  const pendingBookings = bookings.filter((b) => b.status === 'pending')
-  const inProgressBookings = bookings.filter((b) => b.status === 'in_progress')
-  const completedBookings = bookings.filter((b) => b.status === 'completed')
-
-  const pendingRevenue = pendingBookings.reduce((acc, item) => acc + getAmount(item), 0)
-  const inProgressRevenue = inProgressBookings.reduce((acc, item) => acc + getAmount(item), 0)
-  const completedRevenue = completedBookings.reduce((acc, item) => acc + getAmount(item), 0)
-
-  return (
-    <section aria-label="Métricas de Desempenho e Faturação" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-      {/* Total de Serviços */}
-      <article className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-start">
-        <div>
-          <h2 className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">
-            Total Serviços
-          </h2>
-          <p className="text-xl sm:text-2xl font-extrabold text-[#0B192C] mt-1">
-            {totalBookings}
-          </p>
-          <p className="text-[11px] font-medium text-slate-500 mt-1">
-            Valor:{' '}
-            <strong className="text-slate-700">
-              {totalRevenueAll.toFixed(2)} €
-            </strong>
-          </p>
-        </div>
-        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-600 font-bold text-base sm:text-lg shrink-0">
-          📋
-        </div>
-      </article>
-
-      {/* Agendados / Pendentes */}
-      <article className="bg-amber-50/50 p-4 sm:p-5 rounded-2xl border border-amber-200 shadow-sm flex justify-between items-start">
-        <div>
-          <h2 className="text-[10px] sm:text-xs font-bold text-amber-600 uppercase">
-            Pendentes
-          </h2>
-          <p className="text-xl sm:text-2xl font-extrabold text-amber-900 mt-1">
-            {pendingBookings.length}
-          </p>
-          <p className="text-[11px] font-medium text-amber-700 mt-1">
-            A receber:{' '}
-            <strong className="text-amber-900">
-              {pendingRevenue.toFixed(2)} €
-            </strong>
-          </p>
-        </div>
-        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 font-bold text-base sm:text-lg shrink-0">
-          ⏳
-        </div>
-      </article>
-
-      {/* Em Execução */}
-      <article className="bg-blue-50/50 p-4 sm:p-5 rounded-2xl border border-blue-200 shadow-sm flex justify-between items-start">
-        <div>
-          <h2 className="text-[10px] sm:text-xs font-bold text-blue-600 uppercase">
-            Em Execução
-          </h2>
-          <p className="text-xl sm:text-2xl font-extrabold text-blue-900 mt-1">
-            {inProgressBookings.length}
-          </p>
-          <p className="text-[11px] font-medium text-blue-700 mt-1">
-            Valor:{' '}
-            <strong className="text-blue-900">
-              {inProgressRevenue.toFixed(2)} €
-            </strong>
-          </p>
-        </div>
-        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 font-bold text-base sm:text-lg shrink-0">
-          🧹
-        </div>
-      </article>
-
-      {/* Concluídos */}
-      <article className="bg-emerald-50/50 p-4 sm:p-5 rounded-2xl border border-emerald-200 shadow-sm flex justify-between items-start">
-        <div>
-          <h2 className="text-[10px] sm:text-xs font-bold text-emerald-600 uppercase">
-            Concluídos
-          </h2>
-          <p className="text-xl sm:text-2xl font-extrabold text-emerald-900 mt-1">
-            {completedBookings.length}
-          </p>
-          <p className="text-[11px] font-medium text-emerald-700 mt-1">
-            Faturado:{' '}
-            <strong className="text-emerald-900">
-              {completedRevenue.toFixed(2)} €
-            </strong>
-          </p>
-        </div>
-        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 font-bold text-base sm:text-lg shrink-0">
-          ✅
-        </div>
-      </article>
-    </section>
-  )
+  return <section aria-label="Métricas de serviços" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    {metrics.map(({ filter, label, value, detail, icon: Icon, tone }) => {
+      const active = activeFilter === filter
+      return <button key={filter} type="button" onClick={() => onFilterChange(active && filter !== 'all' ? 'all' : filter)} className={`group rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${active ? 'border-cyan-400 ring-2 ring-cyan-400/20' : 'border-slate-200/80'}`}>
+        <div className="flex items-start justify-between gap-2"><span className={`grid h-9 w-9 place-items-center rounded-xl ${tone}`}><Icon className="h-4 w-4" strokeWidth={2} /></span><ArrowUpRight className="h-4 w-4 text-slate-300 transition group-hover:text-cyan-500" /></div>
+        <p className="mt-4 text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</p>
+        <p className="mt-1 text-2xl font-black tabular-nums text-[#061121]">{value}</p>
+        <p className="mt-1 text-[10px] font-medium text-slate-400">{detail}</p>
+      </button>
+    })}
+  </section>
 }

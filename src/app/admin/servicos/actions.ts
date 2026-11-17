@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { getAdminSession } from '@/lib/admin-auth'
 import { sendWorkerPush } from '@/lib/worker-push-server'
+import { z } from 'zod'
+import { buildBookingNotification, dispatchBookingNotification } from '@/lib/notifications'
 
 export type AssignableWorker = { user_id: string; display_name: string; active: boolean }
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string }
@@ -52,29 +54,29 @@ export async function atribuirFuncionarioAMarcacao(
     }
 
     const { data: previousOrder, error: previousOrderError } = await auth.supabase.from('orders')
-      .select('worker_user_id').eq('id', orderIdInput).maybeSingle()
+      .select('assigned_worker_id, worker_user_id').eq('id', orderIdInput).maybeSingle()
     if (previousOrderError) return { success: false, error: 'Não foi possível validar a marcação.' }
     if (!previousOrder) return { success: false, error: 'Marcação não encontrada.' }
 
     const { data: updated, error } = await auth.supabase.from('orders')
-      .update({ worker_user_id: workerUserId }).eq('id', orderIdInput)
-      .select('id, worker_user_id').maybeSingle()
+      .update({ assigned_worker_id: workerUserId }).eq('id', orderIdInput)
+      .select('id, assigned_worker_id, worker_user_id').maybeSingle()
     if (error) return { success: false, error: 'Não foi possível guardar a atribuição.' }
     if (!updated) return { success: false, error: 'Marcação não encontrada ou sem permissão para a alterar.' }
 
     let notificationWarning: string | undefined
-    if (previousOrder.worker_user_id !== updated.worker_user_id) {
+    if ((previousOrder.assigned_worker_id ?? previousOrder.worker_user_id) !== (updated.assigned_worker_id ?? updated.worker_user_id)) {
       const notifications: Array<{ workerId: string; title: string; body: string }> = []
-      if (previousOrder.worker_user_id) {
+      if (previousOrder.assigned_worker_id ?? previousOrder.worker_user_id) {
         notifications.push({
-          workerId: previousOrder.worker_user_id,
+          workerId: previousOrder.assigned_worker_id ?? previousOrder.worker_user_id,
           title: 'Limpeza removida da agenda',
           body: 'Uma limpeza foi removida da sua agenda.',
         })
       }
-      if (updated.worker_user_id) {
+      if (updated.assigned_worker_id ?? updated.worker_user_id) {
         notifications.push({
-          workerId: updated.worker_user_id,
+          workerId: updated.assigned_worker_id ?? updated.worker_user_id,
           title: 'Nova limpeza na agenda',
           body: 'Foi-lhe atribuída uma limpeza. Consulte a agenda para ver os detalhes.',
         })
@@ -86,7 +88,7 @@ export async function atribuirFuncionarioAMarcacao(
     revalidatePath('/admin/servicos')
     return {
       success: true,
-      data: { orderId: updated.id, workerUserId: updated.worker_user_id, workerName, notificationWarning },
+      data: { orderId: updated.id, workerUserId: updated.assigned_worker_id ?? updated.worker_user_id, workerName, notificationWarning },
     }
   } catch {
     return { success: false, error: 'Ocorreu um erro ao guardar a atribuição.' }
@@ -167,7 +169,7 @@ export async function agendarLimpezasRecorrentes(input: {
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const orderStatuses = ['pending', 'in_progress', 'completed', 'cancelled'] as const
+const orderStatuses = ['pending', 'confirmed', 'en_route', 'in_progress', 'completed', 'cancelled'] as const
 const paymentStatuses = ['pending', 'paid'] as const
 
 type OrderStatus = (typeof orderStatuses)[number]
@@ -272,29 +274,35 @@ export async function updateOrderStatus(
   try {
     const auth = await getAdminClient()
     if (!auth.success) return auth
-    if (typeof orderId !== 'string' || !uuidPattern.test(orderId)
-        || typeof status !== 'string' || !orderStatuses.includes(status as OrderStatus)) {
+    const parsed = z.object({ orderId: z.string().uuid(), status: z.enum(orderStatuses) }).safeParse({ orderId, status })
+    if (!parsed.success) {
       return { success: false, error: 'Estado da marcação inválido.' }
     }
+    const validatedOrderId = parsed.data.orderId
+    const validatedStatus = parsed.data.status
 
     const { data: previous, error: lookupError } = await auth.supabase.from('orders')
-      .select('worker_user_id, status').eq('id', orderId).maybeSingle()
+      .select('worker_user_id, status').eq('id', validatedOrderId).maybeSingle()
     if (lookupError) return { success: false, error: 'Não foi possível carregar a marcação.' }
     if (!previous) return { success: false, error: 'Marcação não encontrada.' }
 
-    const { error: updateError } = await auth.supabase.from('orders').update({ status })
-      .eq('id', orderId)
+    const { error: updateError } = await auth.supabase.from('orders').update({ status: validatedStatus })
+      .eq('id', validatedOrderId)
     if (updateError) return { success: false, error: 'Não foi possível atualizar o estado.' }
 
-    const notificationWarning = previous.worker_user_id && previous.status !== status
+    const notificationWarning = previous.worker_user_id && previous.status !== validatedStatus
       ? await notifyWorkers([{
         workerId: previous.worker_user_id,
-        title: status === 'cancelled' ? 'Limpeza cancelada' : 'Estado da limpeza atualizado',
-        body: status === 'cancelled'
+        title: validatedStatus === 'cancelled' ? 'Limpeza cancelada' : 'Estado da limpeza atualizado',
+        body: validatedStatus === 'cancelled'
           ? 'Uma limpeza agendada foi cancelada.'
           : 'O estado de uma limpeza foi alterado. Consulte a agenda.',
       }])
       : undefined
+    if (previous.status !== validatedStatus && validatedStatus === 'en_route') {
+      const { data: order } = await auth.supabase.from('orders').select('client_id').eq('id', validatedOrderId).maybeSingle()
+      if (order?.client_id) await dispatchBookingNotification(buildBookingNotification('en_route', validatedOrderId, order.client_id))
+    }
     revalidatePath('/admin/servicos')
     revalidatePath('/trabalhador/agenda')
     return { success: true, data: { notificationWarning } }

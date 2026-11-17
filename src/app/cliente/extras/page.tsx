@@ -188,7 +188,7 @@ export default function ClientExtrasPage() {
   const subtotal = precoUnitario * quantidade * fatorDesconto;
 
   return (
-    <main className="min-h-dvh bg-slate-50 pb-12 text-[#0B192C]">
+    <main className="min-h-dvh bg-[#F4F7FB] pb-12 text-[#0B192C]">
       <section className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         <div className="mb-8">
           <Link href="/cliente" className="text-xs font-bold text-sky-700 hover:underline">← Voltar ao início</Link>
@@ -228,7 +228,7 @@ export default function ClientExtrasPage() {
                   setSelectedService(item)
                   setQuantidade(1)
                 }}
-                className="group bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs hover:shadow-md transition cursor-pointer flex flex-col justify-between"
+                className="group overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-lg cursor-pointer flex flex-col justify-between"
               >
                 <div>
                   <div className="relative h-36 bg-slate-100 overflow-hidden">

@@ -141,37 +141,38 @@ export default function WorkerShiftPage() {
   }
 
   if (loading) {
-    return <main className="flex min-h-dvh items-center justify-center bg-[#F3F6FA] text-sm font-bold text-slate-500">A carregar o registo de turnos...</main>
+    return <main className="flex min-h-dvh items-center justify-center bg-[#F4F7FB] text-sm font-bold text-slate-500">A carregar o registo de turnos...</main>
   }
 
   const onBreak = Boolean(activeShift?.break_started_at)
   const activeSeconds = activeShift ? elapsedShiftSeconds(activeShift, now) : 0
 
   return (
-    <main className="min-h-dvh bg-[#F3F6FA] px-4 py-6 text-[#0B192C] sm:px-8 sm:py-10">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+    <main className="min-h-dvh bg-[#F4F7FB] px-4 py-6 text-[#0B192C] sm:px-8 sm:py-10">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <header className="relative isolate overflow-hidden rounded-3xl bg-[#061121] p-6 text-white shadow-xl sm:p-8">
+          <div className="pointer-events-none absolute -right-20 -top-24 -z-10 h-72 w-72 rounded-full bg-cyan-400/15 blur-3xl" />
           <div>
-            <Link href="/trabalhador" className="text-xs font-bold text-slate-500 transition hover:text-[#0B192C]">← Portal do trabalhador</Link>
+            <Link href="/trabalhador/agenda" className="text-xs font-bold text-cyan-300 transition hover:text-white">← Agenda de hoje</Link>
             <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Turno e pausas</h1>
-            <p className="mt-1 text-sm text-slate-500">{workerName ? `Registo de ${workerName}` : 'Registo do seu tempo de trabalho'}</p>
+            <p className="mt-1 text-sm text-slate-300">{workerName ? `Registo de ${workerName}` : 'Registo do seu tempo de trabalho'}</p>
           </div>
           <nav aria-label="Navegação do trabalhador" className="flex flex-wrap gap-2">
-            <Link href="/trabalhador/agenda" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Agenda</Link>
-            <Link href="/trabalhador/horas" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Horas por limpeza</Link>
+            <Link href="/trabalhador/agenda" className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/15">Agenda</Link>
+            <Link href="/trabalhador/horas" className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/15">Horas por limpeza</Link>
           </nav>
         </header>
 
         {error && <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{error}</p>}
         {notice && <p role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">{notice}</p>}
 
-        <section className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <span className={`inline-flex rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider ${activeShift ? onBreak ? 'bg-violet-100 text-violet-800' : 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
                 {activeShift ? onBreak ? 'Em pausa' : 'Turno ativo' : 'Sem turno ativo'}
               </span>
-              <p className="mt-4 font-mono text-4xl font-black tracking-tight text-[#0B192C] sm:text-5xl" aria-live="polite">
+              <p className="mt-4 font-mono text-4xl font-black tracking-tight tabular-nums text-[#0B192C] sm:text-5xl" aria-live="polite">
                 {activeShift ? formatDuration(activeSeconds) : '00h 00m 00s'}
               </p>
               <p className="mt-2 text-xs text-slate-500">
@@ -208,13 +209,13 @@ export default function WorkerShiftPage() {
           </p>
         </section>
 
-        <section className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-700">Últimos 30 dias</p>
               <h2 className="mt-1 text-lg font-black">Histórico de turnos</h2>
             </div>
-            <p className="text-xs font-semibold text-slate-500">
+            <p className="text-xs font-semibold tabular-nums text-slate-500">
               {completedSummary.shifts} turnos · {formatDuration(completedSummary.workedSeconds)}
             </p>
           </div>
@@ -223,7 +224,7 @@ export default function WorkerShiftPage() {
               {history.map((shift) => (
                 <li key={shift.id} className="flex flex-col gap-1 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <span className="text-sm font-bold capitalize text-slate-800">{formatDate(shift.started_at)}</span>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs tabular-nums text-slate-500">
                     {formatTime(shift.started_at)}–{formatTime(shift.ended_at)}
                     {' · '}pausa {formatDuration(shift.break_duration_seconds)}
                     {' · '}<strong className="text-slate-700">{formatDuration(elapsedShiftSeconds(shift, now))}</strong>

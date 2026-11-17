@@ -14,6 +14,10 @@ interface Order {
   status: string;
   notes?: string | null;
   worker_user_id?: string | null;
+  property_id?: string | null;
+  recurring_schedule_id?: string | null;
+  arrival_window_start?: string | null;
+  arrival_window_end?: string | null;
   clients?: {
     name: string;
     phone: string;
@@ -22,11 +26,21 @@ interface Order {
     locality?: string | null;
   };
   worker_profiles?: { display_name: string } | null;
+  properties?: { label: string; street_address: string; postal_code: string; city: string } | null;
+  booking_reviews?: Array<{ rating: number; comment: string | null; has_issue: boolean; issue_status: string }>;
+}
+
+function describeSupabaseError(error: unknown) {
+  if (error instanceof Error) return JSON.stringify({ message: error.message });
+  const value = error as { message?: string; details?: string; code?: string } | null;
+  const serialized = JSON.stringify({ message: value?.message, details: value?.details, code: value?.code });
+  return serialized !== '{}' ? serialized : String(error);
 }
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendente",
   confirmed: "Confirmada",
+  en_route: "Equipa a caminho",
   in_progress: "Em Execução",
   completed: "Concluído",
   cancelled: "Cancelado",
@@ -38,6 +52,7 @@ const STATUS_CLASSES: Record<string, string> = {
   in_progress: "bg-blue-50 text-blue-700 border border-blue-200",
   pending: "bg-amber-50 text-amber-700 border border-amber-200",
   confirmed: "bg-blue-50 text-blue-700 border border-blue-200",
+  en_route: "bg-cyan-50 text-cyan-700 border border-cyan-200",
 };
 
 const formatDate = (dateString: string | null) => {
@@ -82,6 +97,7 @@ export default function PedidosPage() {
         .single();
 
       if (clientError || !clientData) {
+        if (clientError) console.error("Erro ao carregar perfil do cliente:", describeSupabaseError(clientError));
         setError("Perfil de cliente não encontrado.");
         setLoading(false);
         return;
@@ -89,18 +105,20 @@ export default function PedidosPage() {
 
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
-        .select("*, clients(name, phone, address, postal_code, locality), worker_profiles(display_name)")
+        .select("*, clients!orders_client_id_fkey(name, phone, address, postal_code, locality), worker_profiles!orders_assigned_worker_id_fkey(display_name), properties!orders_property_id_fkey(label, street_address, postal_code, city), booking_reviews!booking_reviews_booking_id_fkey(rating, comment, has_issue, issue_status)")
         .eq("client_id", clientData.id)
         .order("scheduled_date", { ascending: false });
 
       if (ordersError) {
+        console.error("Erro detalhado ao carregar pedidos:", describeSupabaseError(ordersError));
         setError("Erro ao carregar pedidos.");
         setLoading(false);
         return;
       }
 
       setOrders((ordersData || []) as Order[]);
-    } catch {
+    } catch (error: unknown) {
+      console.error("Erro inesperado ao carregar pedidos:", describeSupabaseError(error));
       setError("Erro inesperado ao carregar pedidos.");
     } finally {
       setLoading(false);
@@ -111,13 +129,26 @@ export default function PedidosPage() {
     void Promise.resolve().then(fetchOrders);
   }, []);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel("client-bookings-updates")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
+        void fetchOrders();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, []);
+
   const filteredOrders = orders.filter((o) => {
     if (filterStatus === "todos") return true;
     return o.status === filterStatus;
   });
 
   return (
-    <div className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] pb-8 text-[#0B192C] ">
+    <div className="min-h-dvh overflow-x-hidden bg-[#F4F7FB] pb-8 text-[#0B192C] ">
 
 
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-9 lg:px-8">
@@ -142,7 +173,7 @@ export default function PedidosPage() {
             {error}
           </div>
         ) : filteredOrders.length === 0 ? (
-          <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
+          <div className="rounded-3xl border border-slate-200/80 bg-white p-12 text-center shadow-sm">
             {filterStatus !== "todos" ? (
               <>
                 <p className="text-slate-600 font-medium text-lg">
@@ -199,7 +230,7 @@ export default function PedidosPage() {
               </Link>
             </div>
 
-            <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:block">
+            <div className="hidden overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/60 lg:block">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-bold">
                   <tr>
@@ -255,7 +286,7 @@ export default function PedidosPage() {
             </div>
             <div className="space-y-3 lg:hidden">
               {filteredOrders.map((order) => (
-                <article key={order.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <article key={order.id} className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-200/50 transition hover:-translate-y-0.5 hover:border-cyan-200 sm:p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Pedido #{order.id.substring(0, 8).toUpperCase()}</p>

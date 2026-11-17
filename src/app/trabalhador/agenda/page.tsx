@@ -5,21 +5,36 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { marcarDeslocacao } from './actions'
 
 type ChecklistItem = { id: string; category?: string; label: string; done: boolean }
 type ClientInfo = {
   name: string | null
   address: string | null
+  floor_details: string | null
   phone: string | null
   latitude: number | null
   longitude: number | null
+}
+type PropertyInfo = {
+  label: string | null
+  street_address: string | null
+  postal_code: string | null
+  city: string | null
+  reference_notes: string | null
+  access_instructions: string | null
+  cleaning_notes: string | null
+  company_provides_supplies: boolean | null
 }
 type Order = {
   id: string
   client_id: string
   service_type: string
   scheduled_date: string
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  status: 'pending' | 'confirmed' | 'en_route' | 'in_progress' | 'completed' | 'cancelled'
+  property_id: string | null
+  arrival_window_start: string | null
+  arrival_window_end: string | null
   notes: string | null
   worker_notes: string | null
   started_at: string | null
@@ -30,6 +45,7 @@ type Order = {
   worker_checklist: ChecklistItem[] | null
   incident_photos: string[] | null
   clients: ClientInfo | ClientInfo[] | null
+  properties: PropertyInfo | PropertyInfo[] | null
 }
 
 type IncidentPhoto = { path: string; url: string }
@@ -61,8 +77,10 @@ const defaultTasks = (): ChecklistItem[] => {
 }
 
 const getClient = (client: Order['clients']): ClientInfo => Array.isArray(client)
-  ? client[0] ?? { name: null, address: null, phone: null, latitude: null, longitude: null }
-  : client ?? { name: null, address: null, phone: null, latitude: null, longitude: null }
+  ? client[0] ?? { name: null, address: null, floor_details: null, phone: null, latitude: null, longitude: null }
+  : client ?? { name: null, address: null, floor_details: null, phone: null, latitude: null, longitude: null }
+const getProperty = (property: Order['properties']): PropertyInfo | null => Array.isArray(property) ? property[0] ?? null : property
+const formatWindowTime = (value: string | null) => value ? value.slice(0, 5) : null
 
 const formatTime = (value: string) => new Date(value).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
 const formatDate = (value: string) => new Date(value).toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -189,7 +207,7 @@ export default function WorkerAgendaPage() {
       }
 
       const { data, error: ordersError } = await supabase.from('orders')
-        .select('id, client_id, service_type, scheduled_date, status, notes, worker_notes, started_at, completed_at, duration_minutes, paused_at, paused_duration_seconds, worker_checklist, incident_photos, clients(name, address, phone, latitude, longitude)')
+        .select('id, client_id, service_type, scheduled_date, status, property_id, arrival_window_start, arrival_window_end, notes, worker_notes, started_at, completed_at, duration_minutes, paused_at, paused_duration_seconds, worker_checklist, incident_photos, clients!orders_client_id_fkey(name, address, floor_details, phone, latitude, longitude), properties!orders_property_id_fkey(label, street_address, postal_code, city, reference_notes, access_instructions, cleaning_notes, company_provides_supplies)')
         .eq('worker_user_id', user.id)
         .gte('scheduled_date', start.toISOString())
         .lt('scheduled_date', end.toISOString())
@@ -233,10 +251,23 @@ export default function WorkerAgendaPage() {
 
   const counts = useMemo(() => ({
     total: orders.length,
-    pending: orders.filter((order) => order.status === 'pending').length,
+    pending: orders.filter((order) => order.status === 'pending' || order.status === 'confirmed').length,
+    enRoute: orders.filter((order) => order.status === 'en_route').length,
     active: orders.filter((order) => order.status === 'in_progress').length,
     completed: orders.filter((order) => order.status === 'completed').length,
   }), [orders])
+
+  async function markEnRoute(order: Order) {
+    setBusy(`en-route-${order.id}`)
+    setError('')
+    const result = await marcarDeslocacao(order.id)
+    if (!result.success) setError(result.error)
+    else {
+      setNotice('Estado atualizado: equipa a caminho.')
+      await loadAgenda()
+    }
+    setBusy(null)
+  }
 
   async function updateOrder(order: Order, action: 'start' | 'pause' | 'resume' | 'finish') {
     setBusy(`${action}-${order.id}`)
@@ -453,7 +484,7 @@ export default function WorkerAgendaPage() {
   return (
     <div className="min-h-screen bg-[#F3F6FA] text-[#0B192C]">
       {/* Header Superior Moderno */}
-      <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#081426]/95 text-white shadow-sm backdrop-blur-xl">
+      <header className="hidden">
         <div className="mx-auto flex max-w-[1550px] items-center justify-between px-6 py-4 lg:px-10">
           <Link href="/trabalhador" className="flex items-center gap-3.5 group">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00D4FF] text-sm font-black text-[#0B192C] shadow-lg shadow-[#00D4FF]/20 group-hover:scale-105 transition">R&R</span>
@@ -469,9 +500,9 @@ export default function WorkerAgendaPage() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1550px] lg:grid-cols-[270px_minmax(0,1fr)]">
+      <div className="contents">
         {/* Sidebar Moderna */}
-        <aside className="hidden border-r border-slate-200/80 bg-white/80 backdrop-blur-md px-5 py-8 lg:block min-h-[calc(100vh-5rem)]">
+        <aside className="hidden">
           <p className="px-3 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Navegação</p>
           <nav className="mt-4 space-y-2">
             <Link href="/trabalhador" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
@@ -624,7 +655,14 @@ export default function WorkerAgendaPage() {
             <div className="space-y-6">
               {orders.map((order) => {
                 const client = getClient(order.clients)
-                const address = client.address?.trim() ?? ''
+                const property = getProperty(order.properties)
+                const cleanAddress = (value: string | null | undefined) => value?.replace(/[\s,]+$/, '').trim() || ''
+                const propertyAddress = property
+                  ? [property.street_address, property.postal_code, property.city].map(cleanAddress).filter(Boolean).join(', ')
+                  : ''
+                const baseAddress = propertyAddress || cleanAddress(client.address)
+                const floorDetails = cleanAddress(client.floor_details)
+                const fullAddress = [baseAddress, floorDetails].filter(Boolean).join(' · ')
                 const checklist = order.worker_checklist ?? []
                 const completedTasks = checklist.filter((task) => task.done)
                 const completionProgress = checklist.length ? Math.round((completedTasks.length / checklist.length) * 100) : 0
@@ -649,14 +687,14 @@ export default function WorkerAgendaPage() {
                   elapsedSeconds = order.duration_minutes * 60
                 }
 
-                const destinationQuery = client.latitude !== null && client.longitude !== null ? `${client.latitude},${client.longitude}` : address || 'Portugal'
+                const destinationQuery = client.latitude !== null && client.longitude !== null ? `${client.latitude},${client.longitude}` : baseAddress || 'Portugal'
                 const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destinationQuery)}`
                 const wazeUrl = `https://waze.com/ul?q=${encodeURIComponent(destinationQuery)}&navigate=yes`
                 const appleMapsUrl = `https://maps.apple.com/?q=${encodeURIComponent(destinationQuery)}`
 
                 const isOpen = checklistOpen[order.id] ?? false
 
-                const status = order.status === 'pending' ? { label: 'Não iniciada', style: 'bg-amber-50 text-amber-700 border-amber-200' } : order.status === 'in_progress' && order.paused_at ? { label: 'Pausada', style: 'bg-violet-50 text-violet-700 border-violet-200' } : order.status === 'in_progress' ? { label: 'Em andamento', style: 'bg-sky-50 text-sky-700 border-sky-200' } : order.status === 'completed' ? { label: 'Concluída', style: 'bg-emerald-50 text-emerald-700 border-emerald-200' } : { label: 'Cancelada', style: 'bg-rose-50 text-rose-700 border-rose-200' }
+                const status = order.status === 'pending' ? { label: 'Não iniciada', style: 'bg-amber-50 text-amber-700 border-amber-200' } : order.status === 'confirmed' ? { label: 'Confirmada', style: 'bg-blue-50 text-blue-700 border-blue-200' } : order.status === 'en_route' ? { label: 'A caminho', style: 'bg-cyan-50 text-cyan-700 border-cyan-200' } : order.status === 'in_progress' && order.paused_at ? { label: 'Pausada', style: 'bg-violet-50 text-violet-700 border-violet-200' } : order.status === 'in_progress' ? { label: 'Em andamento', style: 'bg-sky-50 text-sky-700 border-sky-200' } : order.status === 'completed' ? { label: 'Concluída', style: 'bg-emerald-50 text-emerald-700 border-emerald-200' } : { label: 'Cancelada', style: 'bg-rose-50 text-rose-700 border-rose-200' }
 
                 const groupedTasks = checklist.reduce<Record<string, ChecklistItem[]>>((acc, task) => {
                   const cat = task.category || 'Outras Tarefas'
@@ -666,17 +704,19 @@ export default function WorkerAgendaPage() {
                 }, {})
 
                 return (
-                  <article key={order.id} className="overflow-hidden rounded-[32px] border border-slate-200/80 bg-white shadow-sm hover:shadow-xl transition-all duration-300">
-                    <div className="flex flex-col gap-6 border-b border-slate-100 p-6 sm:flex-row sm:items-start sm:justify-between sm:p-8">
+                  <article key={order.id} className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm transition-all duration-300 hover:shadow-xl">
+                    <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
                       <div className="flex min-w-0 gap-5">
-                        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#0B192C] text-[#00D4FF] text-xl font-black shadow-md">🏠</span>
+                        <div className="flex shrink-0 flex-col items-center justify-center rounded-xl bg-[#061121] px-3.5 py-2 text-center text-white shadow-md"><span className="text-lg font-extrabold tabular-nums text-cyan-400">{formatTime(order.scheduled_date)}</span><span className="text-[11px] text-slate-300">{new Date(order.scheduled_date).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' })}</span></div>
                         <div className="min-w-0 space-y-2">
                           <div className="flex flex-wrap items-center gap-3">
-                            <h3 className="text-lg font-black text-slate-900">{client.name || 'Cliente'}</h3>
+                            <h3 className="text-lg font-bold text-slate-900">{client.name || 'Cliente'}</h3>
                             <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wider ${status.style}`}>{status.label}</span>
                           </div>
                           <p className="text-xs font-extrabold text-slate-600">{order.service_type}</p>
-                          <p className="text-xs font-semibold text-slate-400 capitalize">🕒 {formatTime(order.scheduled_date)} · {formatDate(order.scheduled_date)}</p>
+                          <p className="text-xs font-semibold capitalize text-slate-400">{formatDate(order.scheduled_date)}</p>
+                          {(order.arrival_window_start || order.arrival_window_end) && <p className="text-xs font-bold text-cyan-700">Janela de chegada: {formatWindowTime(order.arrival_window_start) ?? '--:--'} – {formatWindowTime(order.arrival_window_end) ?? '--:--'}</p>}
+                          {property?.label && <p className="text-xs font-bold text-slate-700">Imóvel: {property.label}</p>}
                           
                           {order.status === 'in_progress' && (
                             <div className="mt-3 inline-flex min-w-56 items-center gap-3 rounded-2xl border border-cyan-300/15 bg-gradient-to-r from-[#0B192C] to-[#12314a] px-4 py-3 text-white shadow-sm">
@@ -708,11 +748,12 @@ export default function WorkerAgendaPage() {
                             </p>
                           )}
 
-                          {address && (
-                            <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-4 space-y-3">
+                          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
+                          {baseAddress && (
+                            <div className="rounded-xl border border-slate-200/80 bg-white p-4 space-y-3 lg:col-span-7">
                               <div className="flex items-center justify-between gap-2">
-                                <p className="text-xs font-semibold text-slate-700">📍 {address}</p>
-                                <button type="button" onClick={() => copyAddressToClipboard(order.id, address)} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition shadow-2xs">
+                                <div className="min-w-0"><p className="text-xs font-semibold text-slate-700">📍 {baseAddress}</p>{floorDetails && <span className="mt-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-900">🏢 Andar / Porta: {floorDetails}</span>}</div>
+                                <button type="button" onClick={() => copyAddressToClipboard(order.id, fullAddress)} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition shadow-2xs">
                                   {copiedAddressId === order.id ? '✓ Morada copiada!' : '📋 Copiar morada'}
                                 </button>
                               </div>
@@ -723,11 +764,30 @@ export default function WorkerAgendaPage() {
                               </div>
                             </div>
                           )}
+                          {(property?.access_instructions || property?.cleaning_notes || property?.company_provides_supplies !== null) && (
+                            <div className="space-y-2.5 rounded-xl border border-cyan-200/80 bg-cyan-50/40 p-4 text-xs lg:col-span-5">
+                              <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-800">Preparação &amp; imóvel</p>
+                              <p className="font-bold text-cyan-900">{property?.company_provides_supplies === false ? 'Usar produtos/equipamentos do cliente' : 'Levar produtos e equipamentos R&R'}</p>
+                              {property?.reference_notes && <p className="whitespace-pre-wrap leading-relaxed text-slate-700"><strong>Referência:</strong> {property.reference_notes}</p>}
+                              {property?.access_instructions && <p className="whitespace-pre-wrap leading-relaxed text-slate-700"><strong>Acesso:</strong> {property.access_instructions}</p>}
+                              {property?.cleaning_notes && <p className="whitespace-pre-wrap leading-relaxed text-slate-700"><strong>Notas de limpeza:</strong> {property.cleaning_notes}</p>}
+                            </div>
+                          )}
+                          </div>
                         </div>
                       </div>
 
-                      {order.status === 'pending' && (
-                        <div className="w-full sm:w-auto sm:min-w-56 space-y-2">
+                      <div className="flex w-full flex-col gap-2 lg:w-auto lg:min-w-56 lg:shrink-0">
+                      {(order.status === 'confirmed' || order.status === 'en_route') && (
+                        <div className="w-full space-y-2">
+                          {order.status === 'confirmed' ? <button type="button" disabled={busy !== null} onClick={() => void markEnRoute(order)} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-cyan-500 px-6 text-xs font-black text-[#0B192C] shadow-lg hover:bg-cyan-400 disabled:opacity-55 disabled:cursor-wait transition">
+                            <span aria-hidden="true">➜</span>{busy === `en-route-${order.id}` ? 'A atualizar...' : 'Iniciar deslocação / A caminho'}
+                          </button> : <div className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-cyan-300 bg-cyan-50 px-6 text-xs font-black text-cyan-800"><span className="h-2 w-2 animate-pulse rounded-full bg-cyan-500" />A caminho</div>}
+                        </div>
+                      )}
+
+                      {(order.status === 'pending' || order.status === 'confirmed' || order.status === 'en_route') && (
+                        <div className="w-full space-y-2">
                           <button type="button" disabled={busy !== null || !canStartNow} onClick={() => void updateOrder(order, 'start')} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#0B192C] px-6 text-xs font-black text-white shadow-lg hover:bg-slate-800 disabled:opacity-55 disabled:cursor-not-allowed transition">
                             <span aria-hidden="true">▶</span>
                             {busy === `start-${order.id}` ? 'A iniciar...' : !canStartNow ? `Disponível em ${formatRemaining(secondsUntilStart)}` : 'Iniciar Serviço'}
@@ -737,7 +797,7 @@ export default function WorkerAgendaPage() {
                       )}
 
                       {order.status === 'in_progress' && (
-                        <div className="w-full sm:w-auto sm:min-w-56">
+                        <div className="w-full">
                           {order.paused_at ? (
                             <button type="button" disabled={busy !== null} onClick={() => void updateOrder(order, 'resume')} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 px-6 text-xs font-black text-white hover:bg-violet-700 transition shadow-md">▶ Retomar Serviço</button>
                           ) : (
@@ -745,15 +805,17 @@ export default function WorkerAgendaPage() {
                           )}
                         </div>
                       )}
+                      </div>
                     </div>
 
                     {/* Barra do Acordeão da Checklist */}
-                    <div className="border-b border-slate-100 bg-slate-50/60 px-6 py-3.5 flex items-center justify-between">
+                     <div className="flex items-center justify-between border-t border-slate-200/80 bg-slate-50 px-5 py-3.5 sm:px-6">
                       <div className="flex items-center gap-3">
-                        <span className="text-xs font-black uppercase tracking-wider text-slate-700">📋 Checklist de Tarefas</span>
-                        <span className="rounded-full bg-[#00D4FF]/20 px-3 py-0.5 text-[11px] font-black text-[#0B192C]">
+                         <span className="hidden text-xs font-black uppercase tracking-wider text-slate-700 sm:inline">📋 Checklist de Tarefas</span>
+                         <span className="rounded-full bg-[#00D4FF]/20 px-3 py-0.5 text-[11px] font-black tabular-nums text-[#0B192C]">
                           {completedTasks.length} / {checklist.length} concluídas ({completionProgress}%)
                         </span>
+                         <span className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${completionProgress}%` }} /></span>
                       </div>
                       <button type="button" onClick={() => toggleChecklistOpen(order.id)} aria-expanded={isOpen} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50 transition shadow-2xs">
                         <span>{isOpen ? '▲ Ocultar checklist' : '▼ Mostrar checklist'}</span>

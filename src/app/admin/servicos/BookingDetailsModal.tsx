@@ -31,12 +31,13 @@ export default function BookingDetailsModal({
   const [editTime, setEditTime] = useState(hasScheduledDate ? scheduledDate.toTimeString().slice(0, 5) : '')
   const [editStatus, setEditStatus] = useState(booking.status || 'pending')
   const [editPaymentStatus, setEditPaymentStatus] = useState(booking.payment_status || 'pending')
-  const [editWorkerUserId, setEditWorkerUserId] = useState(booking.worker_user_id || '')
+  const [editWorkerUserId, setEditWorkerUserId] = useState(booking.assigned_worker_id || booking.worker_user_id || '')
   const [updating, setUpdating] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [incidentPhotos, setIncidentPhotos] = useState<Array<{ path: string; url: string }>>([])
   const [photosError, setPhotosError] = useState('')
+  const property = Array.isArray(booking.properties) ? booking.properties[0] : booking.properties
 
   useEffect(() => {
     let active = true
@@ -124,6 +125,18 @@ export default function BookingDetailsModal({
             <h3 className="text-base sm:text-lg font-bold text-[#0B192C]">Editar / Detalhes do Agendamento</h3>
             <p className="text-xs text-slate-500">{booking.clients?.name || 'Cliente Não Associado'}</p>
           </div>
+
+          {property && (
+            <section className="rounded-2xl border border-cyan-200 bg-cyan-50/60 p-4">
+              <h4 className="text-xs font-black uppercase tracking-wide text-cyan-900">Detalhes do imóvel</h4>
+              <p className="mt-2 text-sm font-bold text-slate-800">{property.label}</p>
+              <p className="text-xs text-slate-700">{[property.street_address, property.postal_code, property.city].filter(Boolean).join(', ')}</p>
+              <p className="mt-2 text-xs font-bold text-cyan-800">{property.company_provides_supplies === false ? 'Usar produtos/equipamentos do cliente' : 'Levar produtos e equipamentos R&R'}</p>
+              {property.access_instructions && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-700"><strong>Acesso:</strong> {property.access_instructions}</p>}
+              {property.cleaning_notes && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-700"><strong>Notas de limpeza:</strong> {property.cleaning_notes}</p>}
+            </section>
+          )}
+          {booking.status === 'cancelled' && booking.late_cancellation_fee_applied && <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-black text-rose-800">⚠ Taxa de cancelamento tardio aplicada</p>}
           <button
             type="button"
             onClick={onClose}
@@ -206,6 +219,8 @@ export default function BookingDetailsModal({
                 className="w-full px-3.5 py-2.5 sm:py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#00D4FF]"
               >
                 <option value="pending">🟡 Agendado / Pendente</option>
+                <option value="confirmed">🔷 Confirmada</option>
+                <option value="en_route">🟦 Equipa a caminho</option>
                 <option value="in_progress">🔵 Em Execução</option>
                 <option value="completed">🟢 Concluído</option>
                 <option value="cancelled">🔴 Cancelado</option>

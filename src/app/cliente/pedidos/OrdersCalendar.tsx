@@ -1,12 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import BookingActions from "./BookingActions";
 
 export interface CalendarOrder {
   id: string;
   client_id: string;
   service_type: string;
   scheduled_date: string | null;
+  arrival_window_start?: string | null;
+  arrival_window_end?: string | null;
   total_amount: number;
   status: string;
   notes?: string | null;
@@ -25,6 +28,7 @@ export interface CalendarOrder {
 const statusStyles: Record<string, { label: string; dot: string; badge: string }> = {
   pending: { label: "Pendente", dot: "bg-amber-500", badge: "bg-amber-50 text-amber-800 ring-amber-200" },
   confirmed: { label: "Confirmada", dot: "bg-blue-500", badge: "bg-blue-50 text-blue-800 ring-blue-200" },
+  en_route: { label: "Equipa a caminho", dot: "bg-violet-500", badge: "bg-violet-50 text-violet-800 ring-violet-200" },
   in_progress: { label: "Em execução", dot: "bg-sky-500", badge: "bg-sky-50 text-sky-800 ring-sky-200" },
   completed: { label: "Concluída", dot: "bg-emerald-500", badge: "bg-emerald-50 text-emerald-800 ring-emerald-200" },
   cancelled: { label: "Cancelada", dot: "bg-rose-500", badge: "bg-rose-50 text-rose-800 ring-rose-200" },
@@ -38,6 +42,9 @@ const orderDateKey = (value: string) => {
 };
 const formatDate = (date: Date) => new Intl.DateTimeFormat("pt-PT", { dateStyle: "full", timeZone: "Europe/Lisbon" }).format(date);
 const formatTime = (value: string) => new Intl.DateTimeFormat("pt-PT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Lisbon" }).format(new Date(value));
+const formatArrivalWindow = (order: CalendarOrder) => order.arrival_window_start && order.arrival_window_end
+  ? `${order.arrival_window_start.slice(0, 5)} – ${order.arrival_window_end.slice(0, 5)}`
+  : null;
 const formatAddress = (order: CalendarOrder) => [order.clients?.address, order.clients?.postal_code, order.clients?.locality].filter(Boolean).join(", ") || "Morada não registada";
 const statusFor = (status: string) => statusStyles[status] ?? { label: status, dot: "bg-slate-400", badge: "bg-slate-100 text-slate-700 ring-slate-200" };
 
@@ -110,9 +117,9 @@ export default function OrdersCalendar({ orders }: { orders: CalendarOrder[] }) 
 
   return (
     <>
-      <section aria-label="Calendário das marcações" className="mb-7 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <section aria-label="Calendário das marcações" className="mb-7 overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/60">
         <header className="flex flex-col gap-4 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div><h2 className="text-lg font-extrabold text-[#0B192C]">Calendário de marcações</h2><p className="mt-1 text-xs text-slate-500">Selecione um dia para consultar os detalhes ou pedir um novo serviço.</p></div>
+          <div><p className="text-[10px] font-black uppercase tracking-[0.16em] text-cyan-700">Agenda pessoal</p><h2 className="mt-1 text-lg font-extrabold text-[#0B192C]">Calendário de marcações</h2><p className="mt-1 text-xs text-slate-500">Selecione um dia para consultar os detalhes ou pedir um novo serviço.</p></div>
           <div className="flex items-center justify-between gap-3 sm:justify-end">
             <button type="button" aria-label="Mês anterior" onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))} className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 text-lg font-bold text-slate-600 hover:bg-slate-50">‹</button>
             <p className="min-w-36 text-center text-sm font-extrabold capitalize text-[#0B192C]">{new Intl.DateTimeFormat("pt-PT", { month: "long", year: "numeric" }).format(visibleMonth)}</p>
@@ -129,8 +136,8 @@ export default function OrdersCalendar({ orders }: { orders: CalendarOrder[] }) 
               const inMonth = day.getMonth() === visibleMonth.getMonth();
               const isToday = key === dateKey(new Date());
               const uniqueStatuses = [...new Set(dayOrders.map((order) => order.status))].slice(0, 3);
-              return <button key={key} type="button" onClick={() => openDate(key)} aria-label={`${formatDate(day)}${dayOrders.length ? `, ${dayOrders.length} marcação(ões)` : ", sem marcações"}`} className={`flex min-h-[58px] min-w-0 flex-col items-center border-b border-r border-slate-100 p-1 transition hover:bg-sky-50 sm:min-h-[78px] sm:p-2 ${inMonth ? "bg-white" : "bg-slate-50/70 text-slate-300"}`}>
-                <span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-bold sm:h-8 sm:w-8 ${isToday ? "bg-[#0B192C] text-white" : inMonth ? "text-slate-700" : "text-slate-300"}`}>{day.getDate()}</span>
+              return <button key={key} type="button" onClick={() => openDate(key)} aria-label={`${formatDate(day)}${dayOrders.length ? `, ${dayOrders.length} marcação(ões)` : ", sem marcações"}`} className={`flex min-h-[58px] min-w-0 flex-col items-center border-b border-r border-slate-100 p-1 transition hover:bg-cyan-50 sm:min-h-[78px] sm:p-2 ${inMonth ? "bg-white" : "bg-slate-50/70 text-slate-300"}`}>
+                <span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-bold tabular-nums sm:h-8 sm:w-8 ${isToday ? "bg-[#061121] text-white" : inMonth ? "text-slate-700" : "text-slate-300"}`}>{day.getDate()}</span>
                 <span className="mt-1 flex min-h-2 items-center gap-1">{uniqueStatuses.map((status) => <span key={status} className={`h-1.5 w-1.5 rounded-full ${statusFor(status).dot}`} />)}{dayOrders.length > 3 && <span className="text-[9px] font-bold text-slate-500">+{dayOrders.length - 3}</span>}</span>
               </button>;
             })}
@@ -148,14 +155,15 @@ export default function OrdersCalendar({ orders }: { orders: CalendarOrder[] }) 
           {selectedOrders.length === 0 ? <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center"><p className="text-sm font-bold text-slate-700">Sem marcações neste dia.</p><p className="mt-1 text-xs text-slate-500">Pode falar connosco ou pedir um serviço extra para esta data.</p></div> : <div className="mt-5 space-y-3">{selectedOrders.map((order) => {
             const style = statusFor(order.status);
             const active = selectedOrder?.id === order.id;
-            return <article key={order.id} className={`rounded-2xl border p-4 transition ${active ? "border-sky-300 bg-sky-50/50" : "border-slate-200 bg-white"}`}>
+            return <article key={order.id} className={`rounded-2xl border-l-4 p-4 transition ${active ? "border-cyan-400 bg-cyan-50/50" : "border-slate-200 border-l-slate-200 bg-white"}`}>
               <button type="button" onClick={() => setSelectedOrderId(active ? null : order.id)} className="flex w-full items-start justify-between gap-3 text-left"><span className="min-w-0"><span className="block text-xs font-bold text-slate-500">{order.scheduled_date ? formatTime(order.scheduled_date) : "Hora a confirmar"}</span><span className="mt-1 block break-words font-extrabold text-[#0B192C]">{order.service_type}</span></span><span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-extrabold ring-1 ring-inset ${style.badge}`}>{style.label}</span></button>
               {active && <div className="mt-4 space-y-3 border-t border-slate-200 pt-4 text-sm">
                 <Detail label="Horário" value={order.scheduled_date ? formatTime(order.scheduled_date) : "A confirmar"} />
+                <Detail label="Janela de chegada" value={formatArrivalWindow(order) ?? "A confirmar"} />
                 <Detail label="Morada" value={formatAddress(order)} />
                 <Detail label="Equipa atribuída" value={order.worker_profiles?.display_name ?? (order.worker_user_id ? "Equipa confirmada" : "A atribuir")} />
                 <Detail label="Serviço e extras" value={order.notes?.trim() || "Sem extras ou observações registadas."} />
-                <div className="flex flex-wrap gap-2 pt-1"><CalendarActions order={order} /><a href={requestNewCleaning} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50">Solicitar nova limpeza</a><a href={addExtraHref} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50">Adicionar serviço extra</a></div>
+                <div className="flex flex-wrap gap-2 pt-1"><CalendarActions order={order} /><BookingActions order={order} /><a href={requestNewCleaning} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50">Solicitar nova limpeza</a><a href={addExtraHref} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700 hover:bg-slate-50">Adicionar serviço extra</a></div>
               </div>}
             </article>;
           })}</div>}

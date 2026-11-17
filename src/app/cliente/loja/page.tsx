@@ -86,7 +86,7 @@ export default function ClientStorePage() {
   }
 
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-[#F5F7FA] pb-8 text-[#0B192C] ">
+    <main className="min-h-dvh overflow-x-hidden bg-[#F4F7FB] pb-8 text-[#0B192C] ">
 
 
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-9 lg:px-8">
@@ -107,7 +107,7 @@ export default function ClientStorePage() {
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
             {products.map((prod) => (
-              <div key={prod.id} className="group flex min-w-0 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg sm:p-5">
+              <div key={prod.id} className="group flex min-w-0 flex-col justify-between rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-lg sm:p-5">
                 <div>
                   <div className="relative mb-3 flex h-28 w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 sm:mb-4 sm:h-40 sm:rounded-2xl">
                     {prod.image_url ? (

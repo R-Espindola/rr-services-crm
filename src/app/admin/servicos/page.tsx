@@ -15,6 +15,29 @@ export interface Order {
   status: string;
   payment_status?: string | null;
   worker_user_id?: string | null;
+  assigned_worker_id?: string | null;
+  recurring_schedule_id?: string | null;
+  property_id?: string | null;
+  arrival_window_start?: string | null;
+  arrival_window_end?: string | null;
+  late_cancellation_fee_applied?: boolean | null;
+  properties?: {
+    label: string | null;
+    street_address: string | null;
+    postal_code: string | null;
+    city: string | null;
+    access_instructions: string | null;
+    cleaning_notes: string | null;
+    company_provides_supplies: boolean | null;
+  } | Array<{
+    label: string | null;
+    street_address: string | null;
+    postal_code: string | null;
+    city: string | null;
+    access_instructions: string | null;
+    cleaning_notes: string | null;
+    company_provides_supplies: boolean | null;
+  }> | null;
   notes?: string;
   worker_notes?: string | null;
   incident_photos?: string[] | null;
@@ -56,6 +79,9 @@ const defaultPricingFrequency = (type: string) => {
   return 'semanal';
 };
 
+const getProperty = (order: Order) => Array.isArray(order.properties) ? order.properties[0] : order.properties;
+const getInitials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || 'CL';
+
 const todayLocal = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -92,7 +118,8 @@ export default function AgendaPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPayment, setFilterPayment] = useState<string>('all');
   const [filterWorker, setFilterWorker] = useState<string>('all');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'active' | 'completed'>('all');
 
   // Estado do Modal de Novo Agendamento
   const [submitting, setSubmitting] = useState(false);
@@ -159,7 +186,7 @@ export default function AgendaPage() {
   const fetchOrders = useCallback(async () => {
     const { data, error } = await supabase
       .from('orders')
-      .select('*, clients(name, phone)')
+      .select('*, clients(name, phone), properties(label, street_address, postal_code, city, access_instructions, cleaning_notes, company_provides_supplies)')
       .order('scheduled_date', { ascending: sortOrder === 'asc' });
 
     if (!error && data) {
@@ -328,8 +355,12 @@ export default function AgendaPage() {
       
       const matchesPayment = filterPayment === 'all' || (filterPayment === 'paid' ? order.payment_status === 'paid' : order.payment_status !== 'paid');
       const matchesWorker = filterWorker === 'all' || (filterWorker === 'unassigned' ? !order.worker_user_id : order.worker_user_id === filterWorker);
+      const matchesStatus = filterStatus === 'all'
+        || (filterStatus === 'pending' && order.status === 'pending')
+        || (filterStatus === 'active' && (order.status === 'en_route' || order.status === 'in_progress'))
+        || (filterStatus === 'completed' && order.status === 'completed');
 
-      return matchesSearch && matchesPayment && matchesWorker;
+      return matchesSearch && matchesPayment && matchesWorker && matchesStatus;
     })
     .sort((a, b) => {
       const dateA = new Date(a.scheduled_date).getTime();
@@ -450,43 +481,23 @@ export default function AgendaPage() {
       </div>
 
       {/* COMPONENTE DE MÉTRICAS */}
-      <ServiceMetrics bookings={orders} />
-
-      {/* CARTÕES DE FATURADO NO MÊS E PREVISÃO DE FATURAMENTO */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Faturado em {currentDate.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' })}
-            </p>
-            <h3 className="text-2xl font-extrabold text-[#0B192C] mt-1">
-              {currentMonthFakturated.toFixed(2)} €
-            </h3>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-12">
+        <div className="xl:col-span-7"><ServiceMetrics bookings={orders} activeFilter={filterStatus} onFilterChange={setFilterStatus} /></div>
+        <section className="relative isolate overflow-hidden rounded-2xl border border-cyan-400/20 bg-[#061121] p-5 text-white shadow-lg xl:col-span-5">
+          <div className="pointer-events-none absolute -right-20 -top-24 -z-10 h-64 w-64 rounded-full bg-cyan-400/15 blur-3xl" />
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">Resumo financeiro · {currentDate.toLocaleDateString('pt-PT', { month: 'long' })}</p>
+          <div className="mt-5 grid grid-cols-2 divide-x divide-white/10">
+            <div className="pr-4"><p className="text-xs text-slate-400">Faturado no mês</p><p className="mt-2 text-2xl font-black tabular-nums text-cyan-300">{currentMonthFakturated.toFixed(2)} €</p></div>
+            <div className="pl-4"><p className="text-xs text-slate-400">Previsão faturação</p><p className="mt-2 text-2xl font-black tabular-nums text-white">{currentMonthForecast.toFixed(2)} €</p></div>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 text-lg font-bold shadow-xs">
-            💶
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Previsão Faturamento ({currentDate.toLocaleDateString('pt-PT', { month: 'short' })})
-            </p>
-            <h3 className="text-2xl font-extrabold text-[#0B192C] mt-1">
-              {currentMonthForecast.toFixed(2)} €
-            </h3>
-          </div>
-          <div className="w-12 h-12 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-600 text-lg font-bold shadow-xs">
-            📈
-          </div>
-        </div>
+        </section>
       </div>
 
       {assignmentFeedback && <p role={assignmentFeedback.error ? 'alert' : 'status'} className={`rounded-xl border px-4 py-3 text-sm font-semibold ${assignmentFeedback.error ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{assignmentFeedback.message}</p>}
 
       {/* BARRA DE FILTROS E PESQUISA AVANÇADA */}
-      <div className="flex flex-col items-stretch justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs md:flex-row md:items-center">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+        <div className="flex flex-col items-stretch justify-between gap-3 md:flex-row md:items-center">
         <div className="w-full md:w-72">
           <input
             type="text"
@@ -538,18 +549,17 @@ export default function AgendaPage() {
             📥 Exportar CSV
           </button>
         </div>
-      </div>
-
-      {/* BANNER DE RESUMO DOS FILTROS */}
-      <div className="flex items-center justify-between bg-sky-50 border border-sky-200 px-4 py-3 rounded-xl text-xs font-bold text-sky-900">
-        <span>A exibir {filteredOrders.length} {filteredOrders.length === 1 ? 'serviço' : 'serviços'} correspondentes aos filtros.</span>
-        <span>Valor total filtrado: <strong className="text-sm">{totalFilteredAmount.toFixed(2)} €</strong></span>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs font-semibold text-slate-500">
+          <span>A exibir {filteredOrders.length} {filteredOrders.length === 1 ? 'serviço' : 'serviços'} filtrados.</span>
+          <span>Valor total filtrado: <strong className="text-sm tabular-nums text-[#061121]">{totalFilteredAmount.toFixed(2)} €</strong></span>
+        </div>
       </div>
 
       {/* VISÃO 1: TABELA */}
       {viewMode === 'tabela' && (
         <>
-        <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs lg:block">
+            <div className="hidden overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm lg:block">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[850px]">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-bold">
@@ -571,27 +581,24 @@ export default function AgendaPage() {
                   <tr><td colSpan={8} className="text-center py-10 text-slate-400">Nenhuma limpeza encontrada.</td></tr>
                 ) : (
                   filteredOrders.map(order => (
-                    <tr key={order.id} className="hover:bg-slate-50 transition">
-                      <td className="p-4 font-bold text-[#0B192C]">{order.clients?.name || 'Cliente Não Associado'}</td>
+                    <tr key={order.id} className="transition hover:bg-cyan-50/30">
+                      <td className="p-4"><div className="flex items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#061121] text-xs font-black text-cyan-300">{getInitials(order.clients?.name || 'Cliente')}</span><div className="min-w-0"><p className="font-bold text-[#0B192C]">{order.clients?.name || 'Cliente Não Associado'}</p><div className="mt-1 flex flex-wrap gap-1.5">{getProperty(order)?.label && <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[9px] font-bold text-cyan-800">Imóvel · {getProperty(order)?.label}</span>}{order.recurring_schedule_id && <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[9px] font-bold text-violet-800">Plano recorrente</span>}{order.status === 'cancelled' && order.late_cancellation_fee_applied && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[9px] font-black text-rose-700">Taxa tardia</span>}</div></div></div></td>
                       <td className="p-4 text-slate-600 text-xs">{order.service_type}</td>
-                      <td className="p-4 text-slate-600 text-xs">
-                        {new Date(order.scheduled_date).toLocaleString('pt-PT', {
-                          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-                        })}
+                      <td className="p-4 text-slate-600 text-xs"><p className="font-bold tabular-nums text-[#0B192C]">{new Date(order.scheduled_date).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p><p className="mt-1 tabular-nums text-xs text-slate-500">{order.arrival_window_start && order.arrival_window_end ? `${order.arrival_window_start.slice(0, 5)} – ${order.arrival_window_end.slice(0, 5)}` : new Date(order.scheduled_date).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}</p>
                       </td>
                       <td className="p-4">
                         <select
-                          value={order.worker_user_id ?? ''}
+                          value={order.assigned_worker_id ?? order.worker_user_id ?? ''}
                           disabled={workersLoading || assignmentBusy === order.id}
                           onChange={(event) => void handleWorkerAssignment(order.id, event.target.value)}
                           aria-label={`Funcionário atribuído a ${order.clients?.name || order.service_type}`}
                           className="min-h-10 min-w-36 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:cursor-wait disabled:opacity-60"
                         >
                           <option value="">Sem funcionário</option>
-                          {workersList.filter((worker) => worker.active || worker.user_id === order.worker_user_id).map((worker) => <option key={worker.user_id} value={worker.user_id} disabled={!worker.active}>{worker.display_name}{worker.active ? '' : ' (inativo)'}</option>)}
+                          {workersList.filter((worker) => worker.active || worker.user_id === (order.assigned_worker_id ?? order.worker_user_id)).map((worker) => <option key={worker.user_id} value={worker.user_id} disabled={!worker.active}>{worker.display_name}{worker.active ? '' : ' (inativo)'}</option>)}
                         </select>
                       </td>
-                      <td className="p-4 font-extrabold text-[#0B192C]">{Number(order.total_amount).toFixed(2)} €</td>
+                      <td className="p-4 font-extrabold tabular-nums text-[#0B192C]">{Number(order.total_amount).toFixed(2)} €</td>
                       
                       <td className="p-4">
                         <select
@@ -614,11 +621,14 @@ export default function AgendaPage() {
                           aria-label="Estado operacional do serviço"
                           className={`text-xs font-bold px-3 py-1.5 rounded-xl border outline-none cursor-pointer ${
                             order.status === 'completed' || order.status === 'Concluído' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' :
+                            order.status === 'en_route' ? 'bg-cyan-50 border-cyan-300 text-cyan-800' :
                             order.status === 'cancelled' || order.status === 'Cancelado' ? 'bg-rose-50 border-rose-300 text-rose-800' :
                             'bg-amber-50 border-amber-300 text-amber-800'
                           }`}
                         >
                           <option value="pending">Agendado / Pendente</option>
+                          <option value="confirmed">Confirmada</option>
+                          <option value="en_route">Equipa a caminho</option>
                           <option value="in_progress">Em Execução</option>
                           <option value="completed">Concluído</option>
                           <option value="cancelled">Cancelado</option>
@@ -643,13 +653,14 @@ export default function AgendaPage() {
           ) : filteredOrders.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Nenhuma limpeza encontrada.</div>
           ) : filteredOrders.map(order => (
-            <article key={order.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+            <article key={order.id} className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{order.clients?.name || 'Cliente Não Associado'}</p>
+                  <div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#061121] text-[10px] font-black text-cyan-300">{getInitials(order.clients?.name || 'Cliente')}</span><div><p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{order.clients?.name || 'Cliente Não Associado'}</p>{getProperty(order)?.label && <span className="text-[10px] font-semibold text-cyan-700">Imóvel · {getProperty(order)?.label}</span>}</div></div>
                   <h2 className="mt-1 break-words text-sm font-bold text-[#0B192C]">{order.service_type}</h2>
+                  {order.status === 'cancelled' && order.late_cancellation_fee_applied && <span className="mt-1 inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-black text-rose-700">Taxa de cancelamento tardio</span>}
                 </div>
-                <span className="shrink-0 rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-bold text-cyan-800">{Number(order.total_amount).toFixed(2)} €</span>
+                <span className="shrink-0 rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-bold tabular-nums text-cyan-800">{Number(order.total_amount).toFixed(2)} €</span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -663,6 +674,8 @@ export default function AgendaPage() {
                   <label className="mb-1 block text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Estado</label>
                   <select value={order.status} onChange={(e) => handleStatusChange(order.id, e.target.value)} aria-label="Estado operacional" className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-semibold">
                     <option value="pending">Pendente</option>
+                    <option value="confirmed">Confirmada</option>
+                    <option value="en_route">Equipa a caminho</option>
                     <option value="in_progress">Em execução</option>
                     <option value="completed">Concluído</option>
                     <option value="cancelled">Cancelado</option>
@@ -670,7 +683,7 @@ export default function AgendaPage() {
                 </div>
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                <p className="text-xs font-medium text-slate-500">{new Date(order.scheduled_date).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                <p className="text-xs font-medium tabular-nums text-slate-500">{new Date(order.scheduled_date).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' })} · {order.arrival_window_start && order.arrival_window_end ? `${order.arrival_window_start.slice(0, 5)} – ${order.arrival_window_end.slice(0, 5)}` : new Date(order.scheduled_date).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}</p>
                 <div className="flex items-center gap-2">
                   <button onClick={() => setSelectedBooking(order)} className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700">Editar</button>
                   <button onClick={() => handleDeleteOrder(order.id, order.clients?.name || 'Cliente')} className="p-1.5 text-rose-600">🗑️</button>

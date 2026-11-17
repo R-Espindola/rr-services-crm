@@ -50,7 +50,7 @@ export default function WorkerSecurityPage() {
   return (
     <div className="min-h-screen bg-[#F3F6FA] text-[#0B192C]">
       {/* Header Superior Moderno */}
-      <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-[#081426]/95 text-white shadow-sm backdrop-blur-xl">
+      <header className="hidden">
         <div className="mx-auto flex max-w-[1550px] items-center justify-between px-6 py-4 lg:px-10">
           <Link href="/trabalhador" className="flex items-center gap-3.5 group">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#00D4FF] text-sm font-black text-[#0B192C] shadow-lg shadow-[#00D4FF]/20 group-hover:scale-105 transition">R&R</span>
@@ -65,9 +65,9 @@ export default function WorkerSecurityPage() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1550px] lg:grid-cols-[270px_minmax(0,1fr)]">
+      <div className="contents">
         {/* Sidebar Moderna */}
-        <aside className="hidden border-r border-slate-200/80 bg-white/85 backdrop-blur-md px-5 py-8 lg:block min-h-[calc(100vh-5rem)]">
+        <aside className="hidden">
           <p className="px-3 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Navegação</p>
           <nav aria-label="Área de trabalho" className="mt-4 space-y-2">
             <Link href="/trabalhador" className="flex h-12 items-center gap-3.5 rounded-2xl px-4 text-xs font-bold text-slate-600 hover:bg-slate-100/80 transition">
@@ -174,7 +174,7 @@ export default function WorkerSecurityPage() {
       </div>
 
       {/* Barra de Navegação Móvel Inferior (Bottom Nav) */}
-      <nav aria-label="Navegação do trabalhador" className="fixed inset-x-4 bottom-4 z-40 grid grid-cols-3 gap-1.5 rounded-2xl border border-slate-200/80 bg-white/95 p-2 shadow-2xl backdrop-blur-xl lg:hidden">
+      <nav aria-label="Navegação do trabalhador" className="hidden">
         <Link href="/trabalhador/agenda" className="flex h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-slate-500 transition hover:bg-slate-100 font-bold">
           <span className="text-base">📅</span>
           <span className="text-[10px]">Agenda</span>

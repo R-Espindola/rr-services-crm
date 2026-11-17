@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
 import { CLIENT_THEMES, saveClientTheme, useClientTheme } from "../client-theme";
+import { eliminarConta, exportarDadosCliente } from "../actions";
 
 type ProfileForm = {
   name: string;
@@ -18,7 +19,7 @@ const emptyProfile: ProfileForm = {
   name: "", phone: "", email: "", address: "", postal_code: "", locality: "", birth_date: "",
 };
 
-const fieldClass = "mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#0B192C] outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10";
+const fieldClass = "mt-2 min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-[#0B192C] outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/10";
 const labelClass = "text-xs font-extrabold uppercase tracking-[0.12em] text-slate-600";
 
 export default function ClientProfilePage() {
@@ -36,6 +37,8 @@ export default function ClientProfilePage() {
   const [securityBusy, setSecurityBusy] = useState(false);
   const [securityError, setSecurityError] = useState("");
   const [securitySuccess, setSecuritySuccess] = useState("");
+  const [privacyBusy, setPrivacyBusy] = useState(false);
+  const [privacyMessage, setPrivacyMessage] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -163,8 +166,41 @@ export default function ClientProfilePage() {
     }
   }
 
+  async function exportData() {
+    setPrivacyBusy(true);
+    setPrivacyMessage("");
+    const result = await exportarDadosCliente();
+    if (!result.success) {
+      setPrivacyMessage(result.error);
+      setPrivacyBusy(false);
+      return;
+    }
+    const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "dados-pessoais-rr-services.json";
+    link.click();
+    URL.revokeObjectURL(url);
+    setPrivacyMessage("Os seus dados foram exportados.");
+    setPrivacyBusy(false);
+  }
+
+  async function deleteAccount() {
+    if (!window.confirm("Esta ação anonimiza os seus dados e elimina a conta de acesso. Pretende continuar?")) return;
+    setPrivacyBusy(true);
+    setPrivacyMessage("");
+    const result = await eliminarConta();
+    if (!result.success) {
+      setPrivacyMessage(result.error);
+      setPrivacyBusy(false);
+      return;
+    }
+    window.location.replace("/login?deleted=1");
+  }
+
   return (
-    <main className="min-h-dvh px-4 py-6 pb-28 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <main className="min-h-dvh bg-[#F4F7FB] px-4 py-6 pb-28 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <div className="mx-auto max-w-4xl">
         <header className="mb-7">
           <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-sky-700">Conta do cliente</p>
@@ -189,7 +225,7 @@ export default function ClientProfilePage() {
             <button type="submit" disabled={saving || loading || !userId} className="inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-[#0B192C] px-6 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">{saving ? "A guardar..." : "Guardar alterações"}</button>
           </footer>
         </form>}
-        {!loading && userId && <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+        {!loading && userId && <section className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/50 sm:p-7">
           <div className="mb-5 border-b border-slate-100 pb-4"><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-700">Segurança</p><h2 className="mt-1 text-xl font-black">Credenciais de acesso</h2><p className="mt-1 text-sm text-slate-500">Altere o e-mail usado para entrar ou defina uma nova palavra-passe.</p></div>
           <div className="grid gap-7 lg:grid-cols-2">
             <form onSubmit={updateLoginEmail} className="space-y-4">
@@ -208,7 +244,16 @@ export default function ClientProfilePage() {
           </div>
           <div aria-live="polite" className="mt-5">{securityError && <p role="alert" className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{securityError}</p>}{securitySuccess && <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{securitySuccess}</p>}</div>
         </section>}
-        {!loading && userId && <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+        {!loading && userId && <section className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/50 sm:p-7">
+          <div className="border-b border-slate-100 pb-4"><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-700">Privacidade e direitos</p><h2 className="mt-1 text-xl font-black">Os seus dados</h2><p className="mt-1 text-sm leading-6 text-slate-500">Pode exportar os dados associados à sua conta ou pedir a eliminação da conta, de acordo com o RGPD.</p></div>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <button type="button" disabled={privacyBusy} onClick={() => void exportData()} className="min-h-11 rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">Exportar os meus dados</button>
+            <button type="button" disabled={privacyBusy} onClick={() => void deleteAccount()} className="min-h-11 rounded-xl border border-rose-200 px-4 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50">Eliminar conta e dados</button>
+          </div>
+          {privacyMessage && <p role="status" className="mt-4 text-xs font-semibold text-slate-600">{privacyMessage}</p>}
+          <p className="mt-5 text-xs text-slate-500">Consulte também a <a href="/privacidade" className="font-bold text-sky-700 underline">Política de Privacidade</a> e os <a href="/termos" className="font-bold text-sky-700 underline">Termos e Condições</a>. <a href="https://www.livroreclamacoes.pt" target="_blank" rel="noreferrer" className="font-bold text-sky-700 underline">Livro de Reclamações Eletrónico</a>.</p>
+        </section>}
+        {!loading && userId && <section className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/50 sm:p-7">
           <div className="mb-5 border-b border-slate-100 pb-4"><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-700">Personalização</p><h2 className="mt-1 text-xl font-black">Tema de cores</h2><p className="mt-1 text-sm text-slate-500">Escolha a paleta do portal. A alteração é aplicada imediatamente neste dispositivo.</p></div>
           <div className="grid gap-3 sm:grid-cols-2">
             {CLIENT_THEMES.map((theme) => <ThemeOption key={theme.id} theme={theme} active={theme.id === activeTheme} onSelect={() => saveClientTheme(theme.id)} />)}
