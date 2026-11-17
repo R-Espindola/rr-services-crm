@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Activity, CalendarDays, ClipboardList, FileText, LayoutDashboard, Package, RefreshCw, Settings, ShoppingCart, Star, Users, type LucideIcon } from 'lucide-react';
+import { Activity, CalendarDays, ClipboardList, FileText, LayoutDashboard, Package, PiggyBank, RefreshCw, Settings, ShoppingCart, Star, Users, type LucideIcon } from 'lucide-react';
 
 type MenuItem = { href: string; label: string; short: string; icon: LucideIcon };
 const menuGroups: Array<{ label: string; items: MenuItem[] }> = [
@@ -12,6 +12,7 @@ const menuGroups: Array<{ label: string; items: MenuItem[] }> = [
     { href: '/admin', label: 'Visão Geral', short: 'Início', icon: LayoutDashboard },
     { href: '/admin/servicos', label: 'Agenda & Equipas', short: 'Agenda', icon: CalendarDays },
     { href: '/admin/recorrencias', label: 'Planos Recorrentes', short: 'Recorrentes', icon: RefreshCw },
+    { href: '/admin/financas', label: 'Assistente Financeiro', short: 'Finanças', icon: PiggyBank },
     { href: '/admin/ocorrencias', label: 'Ocorrências & Avaliações', short: 'Feedback', icon: Star },
   ] },
   { label: 'Comercial & Clientes', items: [
