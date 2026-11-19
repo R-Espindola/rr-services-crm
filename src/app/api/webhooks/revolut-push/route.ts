@@ -44,20 +44,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Não foi possível ler o pedido.' }, { status: 400 })
   }
 
+  console.log('REVOLUT_PAYLOAD_RAW:', rawBody)
+
   if (Buffer.byteLength(rawBody, 'utf8') > MAX_BODY_BYTES) {
     return NextResponse.json({ error: 'Pedido demasiado grande.' }, { status: 413 })
   }
 
   let body: Record<string, unknown> = {}
   try {
-    // Limpa quebras de linha literais que o MacroDroid pode injetar dentro das variáveis
     const sanitized = rawBody.replace(/\r?\n/g, ' ')
     const parsedJson = JSON.parse(sanitized)
     if (parsedJson && typeof parsedJson === 'object' && !Array.isArray(parsedJson)) {
       body = parsedJson as Record<string, unknown>
     }
   } catch {
-    // Fallback caso o MacroDroid envie como form-urlencoded
     const params = new URLSearchParams(rawBody)
     body = {
       title: params.get('title') ?? '',
@@ -68,8 +68,8 @@ export async function POST(request: Request) {
   const title = typeof body.title === 'string' ? body.title.trim() : ''
   const text = typeof body.text === 'string' ? body.text.trim() : ''
 
-  // Ignora testes vazios do botão "Testar Ações" do MacroDroid sem notificação ativa
   if (!title || !text || text === '[notification]' || title === '[not_title]') {
+    console.log('REVOLUT_IGNORED: empty_or_test_notification', { title, text })
     return NextResponse.json(
       { received: true, ignored: 'empty_or_test_notification' },
       { status: 200 }
@@ -83,6 +83,7 @@ export async function POST(request: Request) {
   })
 
   if (!validation.success) {
+    console.log('REVOLUT_VALIDATION_ERROR:', validation.error.flatten())
     return NextResponse.json({ error: 'Notificação inválida.' }, { status: 400 })
   }
 
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
   })
 
   if (!parsed) {
-    // Devolve 200 para notificações informativas da Revolut (ex: promoções, códigos 2FA) sem transação
+    console.log('REVOLUT_IGNORED: non_transactional_notification', { title, text })
     return NextResponse.json(
       { received: true, ignored: 'non_transactional_notification' },
       { status: 200 }
@@ -112,6 +113,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await processRevolutNotification(supabase, parsed, validation.data.title, validation.data.text)
+    console.log('REVOLUT_PROCESSED:', result)
     return NextResponse.json({
       received: true,
       duplicate: !result.inserted,
