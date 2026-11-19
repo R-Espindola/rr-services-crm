@@ -12,9 +12,20 @@ export type ParsedRevolutNotification = {
   timestamp: Date
 }
 
-const outgoingPattern = /\b(?:pagaste|spent|paid|pagamento\s+com\s+cart[aã]o|card\s+payment|payment\s+with\s+card)\b/i
-const incomingPattern = /\b(?:recebeste|received|transfer[eê]ncia\s+recebida|transfer\s+received|money\s+received)\b/i
+const outgoingPattern =
+  /\b(?:pagaste|voc[eê]\s+pagou|voc[eê]\s+enviou|enviaste|transfer[eê]ncia\s+enviada|spent|paid|pagamento\s+com\s+cart[aã]o|card\s+payment|payment\s+with\s+card)\b/i
+const incomingPattern =
+  /\b(?:recebeste|voc[eê]\s+recebeu|pagamento\s+recebido|transfer[eê]ncia\s+recebida|transfer\s+received|money\s+received|received)\b/i
+const promoPattern = /\b(?:ganhe\s*€|recompensa|indicad[oa])\b/i
 const amountPattern = /([+\-−])?\s*(?:(EUR|€)\s*)?(\d[\d\s.,]*\d|\d)\s*(EUR|€)?/giu
+
+function stripBalanceAndNoise(text: string) {
+  return text
+    .replace(/Saldo em EUR:.*$/gi, '')
+    .replace(/Toque para conferir\.?/gi, '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, '')
+    .trim()
+}
 
 function parseAmount(value: string) {
   const normalized = value.replace(/\s/g, '')
@@ -58,34 +69,45 @@ function extractAmount(text: string) {
   return null
 }
 
-function extractParty(text: string, direction: 'expense' | 'income') {
-  const pattern = direction === 'expense' ? /\b(?:em|at)\s+(.+?)\s*$/i : /\b(?:de|from)\s+(.+?)\s*$/i
-  const match = text.match(pattern)
-  const party = match?.[1]?.replace(/[\s.,;:!?]+$/, '').trim()
+function extractParty(cleanText: string, cleanTitle: string, direction: 'expense' | 'income') {
+  const pattern =
+    direction === 'expense'
+      ? /(?:\bno\(a\)|\b(?:em|para|at|to))\s+(.+?)\s*$/i
+      : /\b(?:recebido\s+de|de|from)\s+([^.]+?)(?:\.|$)/i
+
+  const match = cleanText.match(pattern)
+  const rawParty = match?.[1] ?? (direction === 'expense' && !outgoingPattern.test(cleanTitle) ? cleanTitle : '')
+  const party = rawParty.replace(/[\s.,;:!?…]+$/g, '').trim()
   return party ? party.slice(0, 160) : null
 }
 
 export function parseRevolutNotification(input: RevolutNotificationInput): ParsedRevolutNotification | null {
   if (!Number.isFinite(input.timestamp.getTime())) return null
 
-  const content = `${input.title}\n${input.text}`
+  const cleanTitle = stripBalanceAndNoise(input.title)
+  const cleanText = stripBalanceAndNoise(input.text)
+  const content = `${cleanTitle}\n${cleanText}`
+
+  if (promoPattern.test(content)) return null
+
   const extractedAmount = extractAmount(content)
   if (!extractedAmount) return null
 
-  const direction = extractedAmount.sign === '+'
-    ? 'income'
-    : extractedAmount.sign === '-' || extractedAmount.sign === '−'
-      ? 'expense'
-      : incomingPattern.test(content)
-        ? 'income'
-        : outgoingPattern.test(content)
-          ? 'expense'
-          : null
+  const direction =
+    extractedAmount.sign === '+'
+      ? 'income'
+      : extractedAmount.sign === '-' || extractedAmount.sign === '−'
+        ? 'expense'
+        : incomingPattern.test(content)
+          ? 'income'
+          : outgoingPattern.test(content)
+            ? 'expense'
+            : null
 
   if (!direction) return null
 
   const amount = direction === 'income' ? extractedAmount.amount : -extractedAmount.amount
-  const party = extractParty(input.text, direction)
+  const party = extractParty(cleanText, cleanTitle, direction)
 
   return {
     direction,
