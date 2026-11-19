@@ -48,27 +48,56 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Pedido demasiado grande.' }, { status: 413 })
   }
 
-  let body: unknown
+  let body: Record<string, unknown> = {}
   try {
-    body = JSON.parse(rawBody)
+    // Limpa quebras de linha literais que o MacroDroid pode injetar dentro das variáveis
+    const sanitized = rawBody.replace(/\r?\n/g, ' ')
+    const parsedJson = JSON.parse(sanitized)
+    if (parsedJson && typeof parsedJson === 'object' && !Array.isArray(parsedJson)) {
+      body = parsedJson as Record<string, unknown>
+    }
   } catch {
-    return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 })
+    // Fallback caso o MacroDroid envie como form-urlencoded
+    const params = new URLSearchParams(rawBody)
+    body = {
+      title: params.get('title') ?? '',
+      text: params.get('text') ?? '',
+    }
   }
 
-  const validation = notificationSchema.safeParse(body)
+  const title = typeof body.title === 'string' ? body.title.trim() : ''
+  const text = typeof body.text === 'string' ? body.text.trim() : ''
+
+  // Ignora testes vazios do botão "Testar Ações" do MacroDroid sem notificação ativa
+  if (!title || !text || text === '[notification]' || title === '[not_title]') {
+    return NextResponse.json(
+      { received: true, ignored: 'empty_or_test_notification' },
+      { status: 200 }
+    )
+  }
+
+  const validation = notificationSchema.safeParse({
+    title,
+    text,
+    timestamp: typeof body.timestamp === 'string' ? body.timestamp : undefined,
+  })
+
   if (!validation.success) {
     return NextResponse.json({ error: 'Notificação inválida.' }, { status: 400 })
   }
 
-  const { title, text, timestamp } = validation.data
   const parsed = parseRevolutNotification({
-    title,
-    text,
-    timestamp: timestamp ? new Date(timestamp) : new Date(),
+    title: validation.data.title,
+    text: validation.data.text,
+    timestamp: validation.data.timestamp ? new Date(validation.data.timestamp) : new Date(),
   })
 
   if (!parsed) {
-    return NextResponse.json({ error: 'Não foi possível identificar o valor ou a direção da transação.' }, { status: 422 })
+    // Devolve 200 para notificações informativas da Revolut (ex: promoções, códigos 2FA) sem transação
+    return NextResponse.json(
+      { received: true, ignored: 'non_transactional_notification' },
+      { status: 200 }
+    )
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -82,7 +111,7 @@ export async function POST(request: Request) {
   })
 
   try {
-    const result = await processRevolutNotification(supabase, parsed, title, text)
+    const result = await processRevolutNotification(supabase, parsed, validation.data.title, validation.data.text)
     return NextResponse.json({
       received: true,
       duplicate: !result.inserted,
