@@ -2,14 +2,16 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ArrowRight, Calculator, CheckCircle2, CircleDollarSign, Clock3, Landmark, PiggyBank, Plus, Receipt, ShieldCheck, Sparkles, Trash2, Wallet, X } from 'lucide-react'
-import { createFinanceExpense, createFinanceExtraIncome, deleteFinanceExpense, deleteFinanceExtraIncome, saveFinanceRules, updateFinanceExpenseRecurrence } from './actions'
+import { ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Calculator, CheckCircle2, CircleDollarSign, Clock3, Landmark, PiggyBank, Plus, Receipt, ShieldCheck, Sparkles, Trash2, Wallet, X } from 'lucide-react'
+import { convertRevolutTransactionToExtraIncome, createFinanceExpense, createFinanceExtraIncome, deleteFinanceExpense, deleteFinanceExtraIncome, reconcileRevolutTransactionWithOrder, saveFinanceRules, updateFinanceExpenseRecurrence } from './actions'
 
 export type FinanceRules = { tax_reserve_pct: number; business_ops_pct: number; personal_weekly_pct: number; savings_pct: number; weekly_fixed_target: number }
 export type FinanceExpense = { id: string; title: string; amount: number; expense_type: 'personal' | 'business'; category: string; expense_date: string; is_recurring_weekly: boolean; is_recurring_monthly: boolean; recurrence_day: number | null; is_virtual_recurring: boolean; notes: string }
 export type FinanceExtraIncome = { id: string; title: string; amount: number; category: 'freelance_web' | 'bonus_servico' | 'vendas' | 'reembolso' | 'outros'; income_date: string; notes: string }
 export type FinanceOrderSummary = { id: string; status: string; total_amount: number; scheduled_date: string }
-export type FinanceData = { weekStart: string; weekEnd: string; weekLabel: string; realized: number; forecast: number; cleaningGross: number; extraIncomeTotal: number; gross: number; expensesTotal: number; personalExpenses: number; businessExpenses: number; daysRemaining: number; rules: FinanceRules; expenses: FinanceExpense[]; extraIncomes: FinanceExtraIncome[]; upcomingExpenses: FinanceExpense[]; upcomingExtraIncomes: FinanceExtraIncome[]; orders: FinanceOrderSummary[] }
+export type FinanceRevolutTransaction = { bank_tx_id: string; title: string; amount: number; direction: 'expense' | 'income'; merchant_name: string | null; counterparty_name: string | null; transaction_at: string; category: string; matched_order_id: string | null; converted_extra_income_id: string | null }
+export type FinanceUnpaidOrder = { id: string; service_type: string; total_amount: number; scheduled_date: string }
+export type FinanceData = { weekStart: string; weekEnd: string; weekLabel: string; realized: number; forecast: number; cleaningGross: number; extraIncomeTotal: number; gross: number; expensesTotal: number; personalExpenses: number; businessExpenses: number; daysRemaining: number; rules: FinanceRules; expenses: FinanceExpense[]; extraIncomes: FinanceExtraIncome[]; upcomingExpenses: FinanceExpense[]; upcomingExtraIncomes: FinanceExtraIncome[]; orders: FinanceOrderSummary[]; revolutTransactions: FinanceRevolutTransaction[]; unpaidOrders: FinanceUnpaidOrder[] }
 
 const currency = (value: number) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(value)
 const dateLabel = (value: string) => new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00`))
@@ -26,6 +28,9 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
   const [feedback, setFeedback] = useState('')
   const [saving, setSaving] = useState(false)
   const [simulation, setSimulation] = useState('')
+  const [revolutOrderSelections, setRevolutOrderSelections] = useState<Record<string, string>>({})
+  const [revolutCategorySelections, setRevolutCategorySelections] = useState<Record<string, FinanceExtraIncome['category']>>({})
+  const [revolutActionKey, setRevolutActionKey] = useState('')
   const [expense, setExpense] = useState({ title: '', amount: '', expense_type: 'personal' as 'personal' | 'business', category: 'Geral', expense_date: data.weekStart, is_recurring_weekly: false, is_recurring_monthly: false, recurrence_day: '', notes: '' })
   const [income, setIncome] = useState({ title: '', amount: '', category: 'freelance_web' as FinanceExtraIncome['category'], income_date: data.weekStart, notes: '' })
   const [rules, setRules] = useState({ taxReservePct: String(data.rules.tax_reserve_pct), businessOpsPct: String(data.rules.business_ops_pct), personalWeeklyPct: String(data.rules.personal_weekly_pct), savingsPct: String(data.rules.savings_pct), weeklyFixedTarget: String(data.rules.weekly_fixed_target) })
@@ -45,6 +50,8 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
     ...data.upcomingExpenses.map((item) => ({ ...item, date: item.expense_date, kind: 'expense' as const })),
     ...data.upcomingExtraIncomes.map((item) => ({ ...item, date: item.income_date, kind: 'income' as const })),
   ].sort((a, b) => a.date.localeCompare(b.date))
+  const pendingRevolutTransactions = data.revolutTransactions.filter((item) => item.direction === 'income' && !item.matched_order_id && !item.converted_extra_income_id)
+  const processedRevolutTransactions = data.revolutTransactions.filter((item) => item.direction === 'expense' || item.matched_order_id || item.converted_extra_income_id)
 
   async function saveExpense(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const result = await createFinanceExpense(expense); setFeedback(result.success ? 'Gasto guardado com sucesso.' : result.error); setSaving(false); if (result.success) { setModal(null); router.refresh() } }
   async function saveIncome(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const result = await createFinanceExtraIncome(income); setFeedback(result.success ? 'Renda extra guardada com sucesso.' : result.error); setSaving(false); if (result.success) { setModal(null); router.refresh() } }
@@ -52,6 +59,26 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
   async function removeExpense(item: FinanceExpense) { if (!window.confirm('Eliminar este gasto?')) return; const result = await deleteFinanceExpense(item.id.split(':')[0]); setFeedback(result.success ? 'Gasto eliminado.' : result.error); if (result.success) router.refresh() }
   async function toggleRecurring(item: FinanceExpense) { const result = await updateFinanceExpenseRecurrence({ id: item.id.split(':')[0], is_recurring_monthly: false, recurrence_day: null }); setFeedback(result.success ? 'Recorrência mensal desativada.' : result.error); if (result.success) router.refresh() }
   async function removeIncome(id: string) { if (!window.confirm('Eliminar esta renda extra?')) return; const result = await deleteFinanceExtraIncome(id); setFeedback(result.success ? 'Renda extra eliminada.' : result.error); if (result.success) router.refresh() }
+  async function reconcileRevolutTransaction(logId: string) {
+    const orderId = revolutOrderSelections[logId]
+    if (!orderId) {
+      setFeedback('Selecione a limpeza que corresponde à transferência.')
+      return
+    }
+    setRevolutActionKey(logId)
+    const result = await reconcileRevolutTransactionWithOrder(logId, orderId)
+    setFeedback(result.success ? 'Transferência Revolut conciliada com a limpeza.' : result.error)
+    setRevolutActionKey('')
+    if (result.success) router.refresh()
+  }
+  async function convertRevolutIncome(logId: string) {
+    const category = revolutCategorySelections[logId] ?? 'outros'
+    setRevolutActionKey(logId)
+    const result = await convertRevolutTransactionToExtraIncome(logId, category)
+    setFeedback(result.success ? 'Transferência Revolut registada como renda extra.' : result.error)
+    setRevolutActionKey('')
+    if (result.success) router.refresh()
+  }
 
   return <main className="min-w-0 space-y-5 pb-12 sm:space-y-7">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-600">Planeamento</p><h1 className="mt-1 text-2xl font-black tracking-tight text-[#061121] sm:text-3xl">Assistente Financeiro</h1><p className="mt-1 text-sm text-slate-500">Uma visão prática para tomar decisões semanais com confiança.</p></div><div className="flex items-center gap-2"><a href={`/admin/financas?week=${shiftWeek(data.weekStart, -1)}`} aria-label="Semana anterior" className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm"><ArrowLeft className="h-4 w-4" /></a><span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black tabular-nums text-slate-700">{data.weekLabel}</span><a href={`/admin/financas?week=${shiftWeek(data.weekStart, 1)}`} aria-label="Semana seguinte" className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm"><ArrowRight className="h-4 w-4" /></a></div></div>
@@ -253,6 +280,103 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
         </div>
         <span className="shrink-0 tabular-nums text-xs font-extrabold text-slate-900">{currency(item.total_amount)}</span>
       </div>) : <p className="border-t border-slate-100 pt-3 text-xs text-slate-400">Ainda não há limpezas registadas nesta semana.</p>}
+    </section>
+
+    <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-50 text-cyan-700"><CircleDollarSign className="h-4 w-4" /></span>
+            <h2 className="text-sm font-black text-[#061121]">Movimentos Revolut (Tempo Real)</h2>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">Notificações recebidas e processadas pelo webhook.</p>
+        </div>
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[10px] font-bold text-emerald-800">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          Webhook Ativo • Tempo Real
+        </span>
+      </div>
+
+      <div className="grid gap-5 pt-4 xl:grid-cols-2">
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-xs font-black text-slate-800">Transferências a rever</h3>
+            {pendingRevolutTransactions.length > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">{pendingRevolutTransactions.length} pendente{pendingRevolutTransactions.length === 1 ? '' : 's'}</span>}
+          </div>
+          {pendingRevolutTransactions.length > 0 ? <div className="space-y-2">
+            {pendingRevolutTransactions.map((transaction) => {
+              const matchingOrders = data.unpaidOrders.filter((order) => order.total_amount === transaction.amount)
+              const selectedOrderId = revolutOrderSelections[transaction.bank_tx_id] ?? ''
+              const category = revolutCategorySelections[transaction.bank_tx_id] ?? 'outros'
+              const isSaving = revolutActionKey === transaction.bank_tx_id
+
+              return <article key={transaction.bank_tx_id} className="rounded-xl border border-amber-200/70 bg-amber-50/40 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <ArrowDownLeft className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-bold text-slate-900">{transaction.counterparty_name ?? transaction.title}</p>
+                      <p className="mt-0.5 text-[10px] text-slate-500">{new Intl.DateTimeFormat('pt-PT', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(transaction.transaction_at))}</p>
+                    </div>
+                  </div>
+                  <span className="shrink-0 tabular-nums text-xs font-extrabold text-emerald-700">+ {currency(transaction.amount)}</span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <label className="min-w-0">
+                    <span className="mb-1 block text-[10px] font-semibold text-slate-600">Limpeza não paga</span>
+                    <select value={selectedOrderId} onChange={(event) => setRevolutOrderSelections({ ...revolutOrderSelections, [transaction.bank_tx_id]: event.target.value })} disabled={isSaving || matchingOrders.length === 0} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-800 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15 disabled:bg-slate-100">
+                      <option value="">{matchingOrders.length === 0 ? 'Sem limpeza pendente deste valor' : 'Selecionar limpeza correspondente'}</option>
+                      {matchingOrders.map((order) => <option key={order.id} value={order.id}>
+                        {dateLabel(order.scheduled_date.slice(0, 10))} · {order.service_type} · {currency(order.total_amount)}
+                      </option>)}
+                    </select>
+                  </label>
+                  <button type="button" onClick={() => void reconcileRevolutTransaction(transaction.bank_tx_id)} disabled={!selectedOrderId || isSaving} className="mt-auto inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-[#061121] px-3 text-xs font-bold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
+                    <BadgeCheck className="h-3.5 w-3.5" /> {isSaving ? 'A guardar…' : 'Marcar Paga'}
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <label className="min-w-0 flex-1">
+                    <span className="sr-only">Categoria da renda extra</span>
+                    <select value={category} onChange={(event) => setRevolutCategorySelections({ ...revolutCategorySelections, [transaction.bank_tx_id]: event.target.value as FinanceExtraIncome['category'] })} disabled={isSaving} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15 disabled:bg-slate-100">
+                      {(Object.entries(incomeLabels) as [FinanceExtraIncome['category'], string][]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" onClick={() => void convertRevolutIncome(transaction.bank_tx_id)} disabled={isSaving} className="inline-flex min-h-9 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 px-3 text-xs font-bold text-cyan-900 transition-colors hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50">
+                    {isSaving ? 'A guardar…' : 'Renda Extra'}
+                  </button>
+                </div>
+              </article>
+            })}
+          </div> : <p className="rounded-xl border border-dashed border-slate-200 px-3 py-5 text-center text-xs text-slate-500">Não há transferências por conciliar.</p>}
+        </div>
+
+        <div className="min-w-0">
+          <h3 className="mb-2 text-xs font-black text-slate-800">Últimas movimentações processadas</h3>
+          {processedRevolutTransactions.length > 0 ? <div className="divide-y divide-slate-100">
+            {processedRevolutTransactions.slice(0, 10).map((transaction) => {
+              const status = transaction.direction === 'expense' ? 'Despesa registada' : transaction.matched_order_id ? 'Limpeza paga' : 'Renda extra'
+              const label = transaction.merchant_name ?? transaction.counterparty_name ?? transaction.category
+
+              return <div key={transaction.bank_tx_id} className="flex items-center gap-2.5 py-2.5 first:pt-1">
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${transaction.direction === 'expense' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {transaction.direction === 'expense' ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownLeft className="h-4 w-4" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold text-slate-800">{label}</p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
+                    <span>{new Intl.DateTimeFormat('pt-PT', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(transaction.transaction_at))}</span>
+                    <span>{status}</span>
+                  </div>
+                </div>
+                <span className={`shrink-0 tabular-nums text-xs font-extrabold ${transaction.direction === 'expense' ? 'text-slate-800' : 'text-emerald-700'}`}>
+                  {transaction.direction === 'expense' ? '− ' : '+ '}{currency(Math.abs(transaction.amount))}
+                </span>
+              </div>
+            })}
+          </div> : <p className="rounded-xl border border-dashed border-slate-200 px-3 py-5 text-center text-xs text-slate-500">Ainda não há movimentos processados automaticamente.</p>}
+        </div>
+      </div>
     </section>
 
     {modal === 'expense' && <Modal title="Registar gasto" close={() => setModal(null)}>

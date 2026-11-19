@@ -21,6 +21,9 @@ const expenseSchema = z.object({
 const extraIncomeSchema = z.object({
   title: z.string().trim().min(2).max(160), amount: amountSchema, category: z.string().trim().min(1).max(80), income_date: z.string().date(), notes: z.string().trim().max(1000),
 })
+const revolutLogIdSchema = z.string().regex(/^[0-9a-f]{64}$/)
+const revolutOrderIdSchema = z.string().uuid()
+const revolutIncomeCategorySchema = z.enum(['freelance_web', 'bonus_servico', 'vendas', 'reembolso', 'outros'])
 
 export async function saveFinanceRules(input: unknown): Promise<ActionResult<null>> {
   const parsed = rulesSchema.safeParse(input)
@@ -84,6 +87,50 @@ export async function deleteFinanceExtraIncome(input: unknown): Promise<ActionRe
   if (!session.success) return session
   const { error } = await session.supabase.from('finance_extra_incomes').delete().eq('id', parsed.data)
   if (error) return { success: false, error: `Não foi possível eliminar a renda extra: ${error.message}` }
+  revalidatePath('/admin/financas')
+  return { success: true, data: null }
+}
+
+export async function reconcileRevolutTransactionWithOrder(logId: string, orderId: string): Promise<ActionResult<null>> {
+  const parsedLogId = revolutLogIdSchema.safeParse(logId)
+  const parsedOrderId = revolutOrderIdSchema.safeParse(orderId)
+  if (!parsedLogId.success || !parsedOrderId.success) return { success: false, error: 'Movimento ou limpeza inválidos.' }
+
+  const session = await getAdminSession()
+  if (!session.success) return session
+
+  const { error } = await session.supabase.rpc('reconcile_revolut_transaction_with_order', {
+    p_log_id: parsedLogId.data,
+    p_order_id: parsedOrderId.data,
+  })
+  if (error) {
+    if (error.code === '22023') return { success: false, error: 'O movimento ou a limpeza já não estão pendentes, ou os montantes não correspondem.' }
+    console.error('Falha ao conciliar movimento Revolut:', error.message)
+    return { success: false, error: 'Não foi possível conciliar o movimento Revolut.' }
+  }
+
+  revalidatePath('/admin/financas')
+  return { success: true, data: null }
+}
+
+export async function convertRevolutTransactionToExtraIncome(logId: string, category: string): Promise<ActionResult<null>> {
+  const parsedLogId = revolutLogIdSchema.safeParse(logId)
+  const parsedCategory = revolutIncomeCategorySchema.safeParse(category)
+  if (!parsedLogId.success || !parsedCategory.success) return { success: false, error: 'Movimento ou categoria inválidos.' }
+
+  const session = await getAdminSession()
+  if (!session.success) return session
+
+  const { error } = await session.supabase.rpc('convert_revolut_transaction_to_extra_income', {
+    p_log_id: parsedLogId.data,
+    p_category: parsedCategory.data,
+  })
+  if (error) {
+    if (error.code === '22023') return { success: false, error: 'Este movimento já foi tratado ou não é uma transferência recebida.' }
+    console.error('Falha ao converter movimento Revolut em renda extra:', error.message)
+    return { success: false, error: 'Não foi possível registar a renda extra do Revolut.' }
+  }
+
   revalidatePath('/admin/financas')
   return { success: true, data: null }
 }

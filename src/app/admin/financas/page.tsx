@@ -34,6 +34,8 @@ function occurrenceDates(start: string, endExclusive: string, day: number) {
 
 type ExpenseRow = { id: string; title: string; amount: number | string; expense_type: 'personal' | 'business'; category: string; expense_date: string; is_recurring_weekly: boolean; is_recurring_monthly: boolean; recurrence_day: number | null; notes: string | null; is_virtual_recurring?: boolean }
 type IncomeRow = { id: string; title: string; amount: number | string; category: 'freelance_web' | 'bonus_servico' | 'vendas' | 'reembolso' | 'outros'; income_date: string; notes: string | null }
+type RevolutTransactionRow = { bank_tx_id: string; title: string; amount: number | string; direction: 'expense' | 'income'; merchant_name: string | null; counterparty_name: string | null; transaction_at: string; category: string; matched_order_id: string | null; converted_extra_income_id: string | null }
+type UnpaidOrderRow = { id: string; service_type: string; total_amount: number | string; scheduled_date: string }
 
 export default async function AdminFinancasPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
   const session = await getAdminSession()
@@ -43,7 +45,7 @@ export default async function AdminFinancasPage({ searchParams }: { searchParams
   const weekEndExclusive = addDays(weekStart, 7)
   const today = dateOnly(new Date())
   const upcomingEnd = addDays(today, 36)
-  const [{ data: rulesRow }, { data: orders, error: ordersError }, { data: weekExpenses, error: expensesError }, { data: recurringExpenses, error: recurringError }, { data: futureExpenses, error: futureExpensesError }, { data: extraIncomes, error: incomeError }, { data: futureIncomes, error: futureIncomeError }] = await Promise.all([
+  const [{ data: rulesRow }, { data: orders, error: ordersError }, { data: weekExpenses, error: expensesError }, { data: recurringExpenses, error: recurringError }, { data: futureExpenses, error: futureExpensesError }, { data: extraIncomes, error: incomeError }, { data: futureIncomes, error: futureIncomeError }, { data: revolutTransactions, error: revolutError }, { data: unpaidOrders, error: unpaidOrdersError }] = await Promise.all([
     session.supabase.from('finance_allocation_rules').select('tax_reserve_pct, business_ops_pct, personal_weekly_pct, savings_pct, weekly_fixed_target').eq('id', FINANCE_RULES_ID).maybeSingle(),
     session.supabase.from('orders').select('id, status, total_amount, scheduled_date').gte('scheduled_date', `${weekStart}T00:00:00.000Z`).lt('scheduled_date', `${weekEndExclusive}T00:00:00.000Z`).in('status', ['completed', ...activeStatuses]).order('scheduled_date', { ascending: true }),
     session.supabase.from('finance_expenses').select('id, title, amount, expense_type, category, expense_date, is_recurring_weekly, is_recurring_monthly, recurrence_day, notes').gte('expense_date', weekStart).lt('expense_date', weekEndExclusive).order('expense_date', { ascending: false }),
@@ -51,8 +53,10 @@ export default async function AdminFinancasPage({ searchParams }: { searchParams
     session.supabase.from('finance_expenses').select('id, title, amount, expense_type, category, expense_date, is_recurring_weekly, is_recurring_monthly, recurrence_day, notes').gte('expense_date', today).lt('expense_date', upcomingEnd).order('expense_date', { ascending: true }),
     session.supabase.from('finance_extra_incomes').select('id, title, amount, category, income_date, notes').gte('income_date', weekStart).lt('income_date', weekEndExclusive).order('income_date', { ascending: false }),
     session.supabase.from('finance_extra_incomes').select('id, title, amount, category, income_date, notes').gte('income_date', today).lt('income_date', upcomingEnd).order('income_date', { ascending: true }),
+    session.supabase.from('revolut_transactions_log').select('bank_tx_id, title, amount, direction, merchant_name, counterparty_name, transaction_at, category, matched_order_id, converted_extra_income_id').order('created_at', { ascending: false }).limit(20),
+    session.supabase.from('orders').select('id, service_type, total_amount, scheduled_date').neq('payment_status', 'paid').neq('status', 'cancelled').order('scheduled_date', { ascending: true }),
   ])
-  if (ordersError || expensesError || recurringError || futureExpensesError || incomeError || futureIncomeError) return <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm font-bold text-rose-800">Não foi possível carregar os dados financeiros. Verifique se as migrações do Assistente Financeiro já foram aplicadas.</div>
+  if (ordersError || expensesError || recurringError || futureExpensesError || incomeError || futureIncomeError || revolutError || unpaidOrdersError) return <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm font-bold text-rose-800">Não foi possível carregar os dados financeiros. Verifique se as migrações do Assistente Financeiro e Revolut já foram aplicadas.</div>
   const rules: FinanceRules = { tax_reserve_pct: money(rulesRow?.tax_reserve_pct ?? 20), business_ops_pct: money(rulesRow?.business_ops_pct ?? 20), personal_weekly_pct: money(rulesRow?.personal_weekly_pct ?? 40), savings_pct: money(rulesRow?.savings_pct ?? 20), weekly_fixed_target: money(rulesRow?.weekly_fixed_target ?? 0) }
   const orderRows = (orders ?? []) as Array<{ id: string; status: string; total_amount: number | string | null; scheduled_date: string }>
   const weekRows = (weekExpenses ?? []) as ExpenseRow[]
@@ -66,6 +70,8 @@ export default async function AdminFinancasPage({ searchParams }: { searchParams
   const upcomingExpenses = [...futureRows, ...futureOccurrences].filter((item) => item.expense_date >= today && item.expense_date < upcomingEnd)
   const incomeRows = (extraIncomes ?? []) as IncomeRow[]
   const upcomingIncomeRows = (futureIncomes ?? []) as IncomeRow[]
+  const revolutRows = (revolutTransactions ?? []) as RevolutTransactionRow[]
+  const unpaidOrderRows = (unpaidOrders ?? []) as UnpaidOrderRow[]
   const realized = orderRows.filter((order) => order.status === 'completed').reduce((sum, order) => sum + money(order.total_amount), 0)
   const forecast = orderRows.filter((order) => activeStatuses.includes(order.status)).reduce((sum, order) => sum + money(order.total_amount), 0)
   const personalExpenses = expenseRows.filter((item) => item.expense_type === 'personal').reduce((sum, item) => sum + money(item.amount), 0)
@@ -81,6 +87,8 @@ export default async function AdminFinancasPage({ searchParams }: { searchParams
     upcomingExpenses: upcomingExpenses.map((item): FinanceExpense => ({ ...item, amount: money(item.amount), notes: item.notes ?? '', is_virtual_recurring: item.is_virtual_recurring ?? false })),
     upcomingExtraIncomes: upcomingIncomeRows.map((item): FinanceExtraIncome => ({ ...item, amount: money(item.amount), notes: item.notes ?? '' })),
     orders: orderRows.map((item): FinanceOrderSummary => ({ ...item, total_amount: money(item.total_amount) })),
+    revolutTransactions: revolutRows.map((item) => ({ ...item, amount: money(item.amount) })),
+    unpaidOrders: unpaidOrderRows.map((item) => ({ ...item, total_amount: money(item.total_amount) })),
   }
   return <FinanceDashboard data={data} />
 }
