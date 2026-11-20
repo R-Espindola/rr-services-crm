@@ -13,15 +13,17 @@ export type ParsedRevolutNotification = {
 }
 
 const outgoingPattern =
-  /\b(?:pagaste|voc[eê]\s+pagou|voc[eê]\s+enviou|enviaste|transfer[eê]ncia\s+enviada|spent|paid|pagamento\s+com\s+cart[aã]o|card\s+payment|payment\s+with\s+card)\b/i
+  /\b(?:pagaste|voc[eê]\s+pagou|valor\s+gasto|gastaste|compra|voc[eê]\s+enviou|enviaste|transfer[eê]ncia\s+enviada|d[eé]bito|spent|paid|pagamento\s+com\s+cart[aã]o|card\s+payment|payment\s+with\s+card)\b/i
 const incomingPattern =
-  /\b(?:recebeste|voc[eê]\s+recebeu|pagamento\s+recebido|transfer[eê]ncia\s+recebida|transfer\s+received|money\s+received|received)\b/i
-const promoPattern = /\b(?:ganhe\s*€|recompensa|indicad[oa])\b/i
+  /\b(?:recebeste|voc[eê]\s+recebeu|pagamento\s+recebido|transfer[eê]ncia\s+recebida|reembolso|estorno|transfer\s+received|money\s+received|received|refund)\b/i
+const cardBalancePattern = /Saldo\s+(?:em|de)\s+EUR:/i
+const ignoredPattern =
+  /\b(?:ganhe\s*€|recompensa|indicad[oa]|pagamento\s+recusado|rejeitad[oa]|declined|failed|insuficiente|c[oó]digo\s+de\s+verifica[cç][aã]o|c[aâ]mbio)\b/i
 const amountPattern = /([+\-−])?\s*(?:(EUR|€)\s*)?(\d[\d\s.,]*\d|\d)\s*(EUR|€)?/giu
 
 function stripBalanceAndNoise(text: string) {
   return text
-    .replace(/Saldo em EUR:.*$/gi, '')
+    .replace(/Saldo\s+(?:em|de)\s+EUR:.*$/gi, '')
     .replace(/Toque para conferir\.?/gi, '')
     .replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, '')
     .trim()
@@ -76,7 +78,9 @@ function extractParty(cleanText: string, cleanTitle: string, direction: 'expense
       : /\b(?:recebido\s+de|de|from)\s+([^.]+?)(?:\.|$)/i
 
   const match = cleanText.match(pattern)
-  const rawParty = match?.[1] ?? (direction === 'expense' && !outgoingPattern.test(cleanTitle) ? cleanTitle : '')
+  const rawParty =
+    match?.[1] ??
+    (direction === 'expense' && cleanTitle && !outgoingPattern.test(cleanTitle) ? cleanTitle : '')
   const party = rawParty.replace(/[\s.,;:!?…]+$/g, '').trim()
   return party ? party.slice(0, 160) : null
 }
@@ -84,11 +88,12 @@ function extractParty(cleanText: string, cleanTitle: string, direction: 'expense
 export function parseRevolutNotification(input: RevolutNotificationInput): ParsedRevolutNotification | null {
   if (!Number.isFinite(input.timestamp.getTime())) return null
 
+  const hasCardBalanceFooter = cardBalancePattern.test(input.text)
   const cleanTitle = stripBalanceAndNoise(input.title)
   const cleanText = stripBalanceAndNoise(input.text)
   const content = `${cleanTitle}\n${cleanText}`
 
-  if (promoPattern.test(content)) return null
+  if (ignoredPattern.test(content)) return null
 
   const extractedAmount = extractAmount(content)
   if (!extractedAmount) return null
@@ -100,7 +105,7 @@ export function parseRevolutNotification(input: RevolutNotificationInput): Parse
         ? 'expense'
         : incomingPattern.test(content)
           ? 'income'
-          : outgoingPattern.test(content)
+          : outgoingPattern.test(content) || hasCardBalanceFooter
             ? 'expense'
             : null
 
