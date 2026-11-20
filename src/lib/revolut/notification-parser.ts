@@ -129,12 +129,24 @@ export function categorizeRevolutNotification(notification: ParsedRevolutNotific
   const merchant = notification.merchantName?.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase() ?? ''
 
   if (/\b(galp|bp|repsol|cepsa|shell|prio|moeve|petro(l|gal)|fuel)\b/.test(merchant)) {
-    return 'Combustível'
+    return 'combustivel'
   }
 
   if (/\b(continente|pingo doce|lidl|aldi|mercadona|auchan|intermarche|minipreco|spar|carrefour)\b/.test(merchant)) {
-    return 'Supermercado'
+    return 'supermercado'
   }
 
-  return 'Produtos'
+  if (/\b(adobe|microsoft|google workspace|apple|spotify|netflix|dropbox|github|software|saas)\b/.test(merchant)) {
+    return 'tecnologia'
+  }
+
+  if (/\b(edp|endesa|iberdrola|meo|nos|vodafone|rent|renda|condominio)\b/.test(merchant)) {
+    return 'habitacao'
+  }
+
+  if (/\b(produto|material|limpeza|leroy merlin|bricomarche)\b/.test(merchant)) {
+    return 'produtos'
+  }
+
+  return 'outros'
 }

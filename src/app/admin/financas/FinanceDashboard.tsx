@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Calculator, CheckCircle2, CircleDollarSign, Clock3, Landmark, PiggyBank, Plus, Receipt, ShieldCheck, Sparkles, Trash2, Wallet, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, Calculator, CheckCircle2, CircleDollarSign, Clock3, Fuel, Home, Landmark, Laptop, Package, PiggyBank, Plus, Receipt, ShieldCheck, ShoppingCart, Sparkles, Trash2, Wallet, X } from 'lucide-react'
 import { convertRevolutTransactionToExtraIncome, createFinanceExpense, createFinanceExtraIncome, deleteFinanceExpense, deleteFinanceExtraIncome, reconcileRevolutTransactionWithOrder, saveFinanceRules, updateFinanceExpenseRecurrence } from './actions'
 
 export type FinanceRules = { tax_reserve_pct: number; business_ops_pct: number; personal_weekly_pct: number; savings_pct: number; weekly_fixed_target: number }
@@ -11,12 +11,63 @@ export type FinanceExtraIncome = { id: string; title: string; amount: number; ca
 export type FinanceOrderSummary = { id: string; status: string; total_amount: number; scheduled_date: string }
 export type FinanceRevolutTransaction = { bank_tx_id: string; title: string; amount: number; direction: 'expense' | 'income'; merchant_name: string | null; counterparty_name: string | null; transaction_at: string; category: string; matched_order_id: string | null; converted_extra_income_id: string | null }
 export type FinanceUnpaidOrder = { id: string; service_type: string; total_amount: number; scheduled_date: string }
-export type FinanceData = { weekStart: string; weekEnd: string; weekLabel: string; realized: number; forecast: number; cleaningGross: number; extraIncomeTotal: number; gross: number; expensesTotal: number; personalExpenses: number; businessExpenses: number; daysRemaining: number; rules: FinanceRules; expenses: FinanceExpense[]; extraIncomes: FinanceExtraIncome[]; upcomingExpenses: FinanceExpense[]; upcomingExtraIncomes: FinanceExtraIncome[]; orders: FinanceOrderSummary[]; revolutTransactions: FinanceRevolutTransaction[]; unpaidOrders: FinanceUnpaidOrder[] }
+export type FinanceData = { weekStart: string; weekEnd: string; weekLabel: string; monthStart: string; realized: number; forecast: number; cleaningGross: number; extraIncomeTotal: number; gross: number; expensesTotal: number; personalExpenses: number; businessExpenses: number; daysRemaining: number; rules: FinanceRules; expenses: FinanceExpense[]; previousWeekExpenses: FinanceExpense[]; monthExpenses: FinanceExpense[]; previousMonthExpenses: FinanceExpense[]; extraIncomes: FinanceExtraIncome[]; monthExtraIncomes: FinanceExtraIncome[]; upcomingExpenses: FinanceExpense[]; upcomingExtraIncomes: FinanceExtraIncome[]; orders: FinanceOrderSummary[]; monthOrders: FinanceOrderSummary[]; revolutTransactions: FinanceRevolutTransaction[]; unpaidOrders: FinanceUnpaidOrder[] }
 
 const currency = (value: number) => new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(value)
 const dateLabel = (value: string) => new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00`))
 const incomeLabels: Record<FinanceExtraIncome['category'], string> = { freelance_web: 'Freelance web', bonus_servico: 'Bónus de serviço', vendas: 'Vendas', reembolso: 'Reembolso', outros: 'Outros' }
 const statusLabels: Record<string, string> = { pending: 'Pendente', confirmed: 'Confirmada', en_route: 'A caminho', in_progress: 'Em curso', completed: 'Concluída' }
+type ExpenseCategory = 'combustivel' | 'supermercado' | 'produtos' | 'tecnologia' | 'habitacao' | 'outros'
+
+const expenseCategories: { key: ExpenseCategory; label: string; color: string; Icon: typeof Fuel }[] = [
+  { key: 'combustivel', label: 'Combustível', color: '#f59e0b', Icon: Fuel },
+  { key: 'supermercado', label: 'Supermercado', color: '#10b981', Icon: ShoppingCart },
+  { key: 'produtos', label: 'Produtos & Materiais', color: '#00D4FF', Icon: Package },
+  { key: 'tecnologia', label: 'Software & Tecnologia', color: '#6366f1', Icon: Laptop },
+  { key: 'habitacao', label: 'Habitação & Fixos', color: '#475569', Icon: Home },
+  { key: 'outros', label: 'Outros', color: '#94a3b8', Icon: Receipt },
+]
+
+const expenseCategoryLabels = Object.fromEntries(expenseCategories.map(({ key, label }) => [key, label])) as Record<ExpenseCategory, string>
+const categoryGroups: { key: string; label: string; categories: ExpenseCategory[]; Icon: typeof Fuel; color: string; tint: string; countLabel: string }[] = [
+  { key: 'combustivel', label: 'Combustível (Gasolina)', categories: ['combustivel'], Icon: Fuel, color: 'text-amber-700', tint: 'bg-amber-50' , countLabel: 'abastecimento' },
+  { key: 'supermercado', label: 'Supermercado (Mercado)', categories: ['supermercado'], Icon: ShoppingCart, color: 'text-emerald-700', tint: 'bg-emerald-50', countLabel: 'compra' },
+  { key: 'operacao', label: 'Produtos & Operação R&R', categories: ['produtos', 'tecnologia'], Icon: Package, color: 'text-cyan-800', tint: 'bg-cyan-50', countLabel: 'movimento' },
+  { key: 'fixos', label: 'Habitação / Fixos / Outros', categories: ['habitacao', 'outros'], Icon: Home, color: 'text-slate-700', tint: 'bg-slate-100', countLabel: 'movimento' },
+]
+
+export function normalizeExpenseCategory(value: string): ExpenseCategory {
+  const normalized = value.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase()
+  if (/\b(combustivel|gasolina|fuel|petrol)\b/.test(normalized)) return 'combustivel'
+  if (/\b(supermercado|mercado|mercearia|grocery)\b/.test(normalized)) return 'supermercado'
+  if (/\b(tecnologia|software|informatica|technology)\b/.test(normalized)) return 'tecnologia'
+  if (/\b(habitacao|fixos|renda|utilities|casa)\b/.test(normalized)) return 'habitacao'
+  if (/\b(produtos|materiais|limpeza|supplies|products)\b/.test(normalized)) return 'produtos'
+  return 'outros'
+}
+
+function sumExpenses(expenses: FinanceExpense[], categories?: ExpenseCategory[]) {
+  return expenses.filter((item) => !categories || categories.includes(normalizeExpenseCategory(item.category))).reduce((sum, item) => sum + item.amount, 0)
+}
+
+function periodChange(current: number, previous: number) {
+  if (previous === 0) return current === 0 ? '0%' : 'Novo'
+  const change = ((current - previous) / previous) * 100
+  return `${change > 0 ? '+' : ''}${Math.round(change)}%`
+}
+
+function addDateDays(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00`)
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+    <h3 className="text-sm font-black text-[#061121]">{title}</h3>
+    {children}
+  </section>
+}
 
 function shiftWeek(value: string, amount: number) { const date = new Date(`${value}T12:00:00`); date.setDate(date.getDate() + amount * 7); return date.toISOString().slice(0, 10) }
 
@@ -24,6 +75,10 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
   const router = useRouter()
   const [tab, setTab] = useState<'expenses' | 'income'>('expenses')
   const [filter, setFilter] = useState<'all' | 'personal' | 'business'>('all')
+  const [analysisPeriod, setAnalysisPeriod] = useState<'week' | 'month'>('week')
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
+  const [highlightedSlice, setHighlightedSlice] = useState<ExpenseCategory | null>(null)
+  const [flowTooltip, setFlowTooltip] = useState<{ id: string; label: string; series: string; value: number } | null>(null)
   const [modal, setModal] = useState<'expense' | 'income' | 'rules' | null>(null)
   const [feedback, setFeedback] = useState('')
   const [saving, setSaving] = useState(false)
@@ -31,7 +86,7 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
   const [revolutOrderSelections, setRevolutOrderSelections] = useState<Record<string, string>>({})
   const [revolutCategorySelections, setRevolutCategorySelections] = useState<Record<string, FinanceExtraIncome['category']>>({})
   const [revolutActionKey, setRevolutActionKey] = useState('')
-  const [expense, setExpense] = useState({ title: '', amount: '', expense_type: 'personal' as 'personal' | 'business', category: 'Geral', expense_date: data.weekStart, is_recurring_weekly: false, is_recurring_monthly: false, recurrence_day: '', notes: '' })
+  const [expense, setExpense] = useState({ title: '', amount: '', expense_type: 'personal' as 'personal' | 'business', category: 'outros', expense_date: data.weekStart, is_recurring_weekly: false, is_recurring_monthly: false, recurrence_day: '', notes: '' })
   const [income, setIncome] = useState({ title: '', amount: '', category: 'freelance_web' as FinanceExtraIncome['category'], income_date: data.weekStart, notes: '' })
   const [rules, setRules] = useState({ taxReservePct: String(data.rules.tax_reserve_pct), businessOpsPct: String(data.rules.business_ops_pct), personalWeeklyPct: String(data.rules.personal_weekly_pct), savingsPct: String(data.rules.savings_pct), weeklyFixedTarget: String(data.rules.weekly_fixed_target) })
   const reserve = data.gross * (data.rules.tax_reserve_pct + data.rules.business_ops_pct + data.rules.savings_pct) / 100
@@ -39,7 +94,65 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
   const dailySafe = freeBalance / Math.max(data.daysRemaining, 1)
   const targetProgress = data.rules.weekly_fixed_target > 0 ? Math.min(100, data.gross / data.rules.weekly_fixed_target * 100) : 0
   const simulationValue = Number(simulation.replace(',', '.')) || 0
-  const visibleExpenses = data.expenses.filter((item) => filter === 'all' || item.expense_type === filter)
+  const analysisExpenses = analysisPeriod === 'week' ? data.expenses : data.monthExpenses
+  const previousAnalysisExpenses = analysisPeriod === 'week' ? data.previousWeekExpenses : data.previousMonthExpenses
+  const analysisIncomes = analysisPeriod === 'week' ? data.extraIncomes : data.monthExtraIncomes
+  const analysisOrders = analysisPeriod === 'week' ? data.orders : data.monthOrders
+  const analysisStart = analysisPeriod === 'week' ? data.weekStart : data.monthStart
+  const categoryTotals = expenseCategories.map((category) => ({
+    ...category,
+    amount: sumExpenses(analysisExpenses, [category.key]),
+  }))
+  const analysisTotal = sumExpenses(analysisExpenses)
+  const categoryGroupsWithTotals = categoryGroups.map((group) => {
+    const amount = sumExpenses(analysisExpenses, group.categories)
+    const previousAmount = sumExpenses(previousAnalysisExpenses, group.categories)
+    const count = analysisExpenses.filter((item) => group.categories.includes(normalizeExpenseCategory(item.category))).length
+    const share = analysisTotal > 0 ? amount / analysisTotal * 100 : 0
+    return { ...group, amount, previousAmount, count, share, change: periodChange(amount, previousAmount) }
+  })
+  const visibleExpenses = data.expenses.filter((item) =>
+    (filter === 'all' || item.expense_type === filter) &&
+    (!categoryFilter || categoryGroups.find((group) => group.key === categoryFilter)?.categories.includes(normalizeExpenseCategory(item.category))),
+  )
+  const monthDayCount = new Date(Number(data.monthStart.slice(0, 4)), Number(data.monthStart.slice(5, 7)), 0).getDate()
+  const flowItems = analysisPeriod === 'week'
+    ? Array.from({ length: 7 }, (_, index) => {
+      const date = addDateDays(analysisStart, index)
+      const dayIncomes = analysisOrders.filter((item) => item.status === 'completed' && item.scheduled_date.slice(0, 10) === date).reduce((sum, item) => sum + item.total_amount, 0)
+      const dayExtra = analysisIncomes.filter((item) => item.income_date === date).reduce((sum, item) => sum + item.amount, 0)
+      const expenses = analysisExpenses.filter((item) => item.expense_date === date)
+      return {
+        label: new Intl.DateTimeFormat('pt-PT', { weekday: 'short' }).format(new Date(`${date}T12:00:00`)).replace('.', ''),
+        cleaning: dayIncomes,
+        extra: dayExtra,
+        personal: expenses.filter((item) => item.expense_type === 'personal').reduce((sum, item) => sum + item.amount, 0),
+        business: expenses.filter((item) => item.expense_type === 'business').reduce((sum, item) => sum + item.amount, 0),
+      }
+    })
+    : Array.from({ length: Math.ceil(monthDayCount / 7) }, (_, index) => {
+        const startDay = index * 7 + 1
+        const start = `${data.monthStart.slice(0, 7)}-${String(startDay).padStart(2, '0')}`
+        const end = addDateDays(start, 7)
+        const inRange = (date: string) => date >= start && date < end
+        const cleaning = analysisOrders.filter((item) => item.status === 'completed' && inRange(item.scheduled_date.slice(0, 10))).reduce((sum, item) => sum + item.total_amount, 0)
+        const extra = analysisIncomes.filter((item) => inRange(item.income_date)).reduce((sum, item) => sum + item.amount, 0)
+        const expenses = analysisExpenses.filter((item) => inRange(item.expense_date))
+        const lastDay = Math.min(startDay + 6, monthDayCount)
+        return {
+          label: `${startDay}–${lastDay}`,
+          cleaning,
+          extra,
+          personal: expenses.filter((item) => item.expense_type === 'personal').reduce((sum, item) => sum + item.amount, 0),
+          business: expenses.filter((item) => item.expense_type === 'business').reduce((sum, item) => sum + item.amount, 0),
+        }
+      })
+  const flowMax = Math.max(1, ...flowItems.flatMap((item) => [item.cleaning, item.extra, item.personal, item.business]))
+  const donutSegments = categoryTotals.filter((item) => item.amount > 0).reduce<Array<(typeof categoryTotals)[number] & { percent: number; offset: number }>>((segments, item) => {
+    const percent = item.amount / analysisTotal * 100
+    const previousSegment = segments[segments.length - 1]
+    return [...segments, { ...item, percent, offset: previousSegment ? previousSegment.offset + previousSegment.percent : 0 }]
+  }, [])
   const buckets = [
     ['Reserva impostos', data.rules.tax_reserve_pct, data.gross * data.rules.tax_reserve_pct / 100, ShieldCheck, 'bg-rose-50 text-rose-700 border-rose-100'],
     ['Operação R&R', data.rules.business_ops_pct, data.gross * data.rules.business_ops_pct / 100, Landmark, 'bg-cyan-50 text-cyan-800 border-cyan-100'],
@@ -183,6 +296,101 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
       </aside>
     </section>
 
+    <section className="space-y-4 rounded-3xl border border-slate-200/80 bg-slate-50/60 p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700">Análise de despesas</p>
+          <h2 className="mt-1 text-lg font-black tracking-tight text-[#061121]">Categorias & fluxo financeiro</h2>
+        </div>
+        <div className="flex w-fit rounded-xl border border-slate-200 bg-white p-1 text-xs font-bold shadow-sm" aria-label="Período analítico">
+          <button type="button" aria-pressed={analysisPeriod === 'week'} onClick={() => { setAnalysisPeriod('week'); setFlowTooltip(null) }} className={`rounded-lg px-3 py-2 transition-colors ${analysisPeriod === 'week' ? 'bg-[#061121] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>Esta Semana</button>
+          <button type="button" aria-pressed={analysisPeriod === 'month'} onClick={() => { setAnalysisPeriod('month'); setFlowTooltip(null) }} className={`rounded-lg px-3 py-2 transition-colors ${analysisPeriod === 'month' ? 'bg-[#061121] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>Este Mês</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {categoryGroupsWithTotals.map(({ key, label, categories, Icon, color, tint, countLabel, amount, count, share, change }) => (
+          <button key={key} type="button" aria-pressed={categoryFilter === key} onClick={() => { setCategoryFilter(categoryFilter === key ? null : key); setTab('expenses') }} className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${categoryFilter === key ? 'border-cyan-400 ring-2 ring-cyan-100' : 'border-slate-200/80'}`}>
+            <div className="flex items-start justify-between gap-3">
+              <span className={`grid h-10 w-10 place-items-center rounded-xl ${tint} ${color}`}><Icon className="h-5 w-5" /></span>
+              <span className="rounded-full bg-slate-50 px-2 py-1 text-[10px] font-bold tabular-nums text-slate-500">{change}</span>
+            </div>
+            <p className="mt-3 text-xs font-bold text-slate-600">{label}</p>
+            <p className="mt-1 tabular-nums text-xl font-black tracking-tight text-[#061121]">{currency(amount)}</p>
+            <div className="mt-2 flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-500">
+              <span>{count} {countLabel}{count === 1 ? '' : 's'} · {share.toFixed(1).replace('.', ',')}% das despesas</span>
+              <span>{periodChange(amount, sumExpenses(previousAnalysisExpenses, categories))} vs. anterior</span>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <ChartCard title={`Distribuição de gastos por categoria · ${analysisPeriod === 'week' ? 'semana' : 'mês'}`}>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[minmax(150px,0.8fr)_minmax(0,1.2fr)] sm:items-center">
+            <div className="relative mx-auto aspect-square w-full max-w-[190px]" aria-label={`Total de despesas: ${currency(analysisTotal)}`}>
+              <svg viewBox="0 0 42 42" className="h-full w-full -rotate-90" role="img" aria-label="Gráfico circular das despesas por categoria">
+                <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="#e2e8f0" strokeWidth="7" />
+                {donutSegments.map((segment) => <circle key={segment.key} cx="21" cy="21" r="15.915" fill="transparent" stroke={segment.color} strokeWidth={highlightedSlice === segment.key ? 9 : 7} strokeDasharray={`${segment.percent} ${100 - segment.percent}`} strokeDashoffset={-segment.offset} className="cursor-pointer transition-all duration-200" role="button" tabIndex={0} aria-label={`${segment.label}: ${currency(segment.amount)}, ${segment.percent.toFixed(1)}%`} onMouseEnter={() => setHighlightedSlice(segment.key)} onMouseLeave={() => setHighlightedSlice(null)} onFocus={() => setHighlightedSlice(segment.key)} onBlur={() => setHighlightedSlice(null)} onClick={() => setHighlightedSlice(segment.key)} />)}
+              </svg>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Total gasto</span>
+                <strong className="mt-1 max-w-[90%] truncate tabular-nums text-base font-black text-[#061121]">{currency(analysisTotal)}</strong>
+                {highlightedSlice && <span className="mt-0.5 max-w-[90%] truncate text-[9px] font-semibold text-slate-500">{expenseCategoryLabels[highlightedSlice]}</span>}
+              </div>
+            </div>
+            <div className="space-y-2.5">
+              {categoryTotals.map((category) => {
+                const percent = analysisTotal > 0 ? category.amount / analysisTotal * 100 : 0
+                const CategoryIcon = category.Icon
+                return <button key={category.key} type="button" onMouseEnter={() => setHighlightedSlice(category.key)} onMouseLeave={() => setHighlightedSlice(null)} onFocus={() => setHighlightedSlice(category.key)} onBlur={() => setHighlightedSlice(null)} onClick={() => setHighlightedSlice(category.key)} className="block w-full rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
+                  <span className="flex items-center justify-between gap-2 text-[10px]">
+                    <span className="flex min-w-0 items-center gap-2 font-bold text-slate-600"><CategoryIcon className="h-3.5 w-3.5 shrink-0" style={{ color: category.color }} />{category.label}</span>
+                    <span className="shrink-0 tabular-nums font-extrabold text-slate-800">{currency(category.amount)} <span className="font-semibold text-slate-400">({percent.toFixed(1).replace('.', ',')}%)</span></span>
+                  </span>
+                  <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <span className="block h-full rounded-full transition-[width] duration-300" style={{ width: `${percent}%`, backgroundColor: category.color }} />
+                  </span>
+                </button>
+              })}
+              {analysisTotal === 0 && <p className="text-center text-[11px] font-medium text-slate-400">Sem despesas registadas neste período.</p>}
+            </div>
+          </div>
+        </ChartCard>
+
+        <ChartCard title={`Fluxo financeiro · ${analysisPeriod === 'week' ? 'por dia da semana' : 'por semana do mês'}`}>
+          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1.5 text-[9px] font-bold text-slate-500">
+            <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-cyan-500" />Limpezas</span>
+            <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-emerald-500" />Rendas extra</span>
+            <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-[#061121]" />Pessoal</span>
+            <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-sm bg-rose-400" />R&R</span>
+          </div>
+          <div className="mt-4 flex h-48 items-end gap-1 border-b border-slate-200 px-1 sm:gap-2">
+            {flowItems.map((item) => {
+              const series = [
+                { key: 'cleaning', value: item.cleaning, color: 'bg-cyan-500', label: 'Limpezas concluídas' },
+                { key: 'extra', value: item.extra, color: 'bg-emerald-500', label: 'Rendas extra' },
+                { key: 'personal', value: item.personal, color: 'bg-[#061121]', label: 'Despesas pessoais' },
+                { key: 'business', value: item.business, color: 'bg-rose-400', label: 'Despesas R&R' },
+              ]
+              return <div key={item.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end">
+                <div className="flex h-[calc(100%-1.5rem)] w-full items-end justify-center gap-0.5 sm:gap-1" title={`${item.label}: entradas ${currency(item.cleaning + item.extra)} · saídas ${currency(item.personal + item.business)}`}>
+                  {series.map((bar) => {
+                    const id = `${item.label}-${bar.key}`
+                    return <button key={bar.key} type="button" title={`${item.label} · ${bar.label}: ${currency(bar.value)}`} aria-label={`${item.label} · ${bar.label}: ${currency(bar.value)}`} onMouseEnter={() => setFlowTooltip({ id, label: item.label, series: bar.label, value: bar.value })} onFocus={() => setFlowTooltip({ id, label: item.label, series: bar.label, value: bar.value })} onClick={() => setFlowTooltip({ id, label: item.label, series: bar.label, value: bar.value })} className={`w-full max-w-3 rounded-t-sm transition-[height] duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-cyan-600 ${bar.color}`} style={{ height: `${bar.value > 0 ? Math.max(2, bar.value / flowMax * 100) : 0}%` }} />
+                  })}
+                </div>
+                <span className="mt-1.5 h-4 text-center text-[9px] font-bold capitalize text-slate-500">{item.label}</span>
+              </div>
+            })}
+          </div>
+          {flowTooltip
+            ? <p role="status" className="mt-3 rounded-lg bg-slate-50 px-2.5 py-2 text-[10px] font-semibold text-slate-600">{flowTooltip.label} · {flowTooltip.series}: <span className="tabular-nums font-black text-[#061121]">{currency(flowTooltip.value)}</span></p>
+            : <p className="mt-3 text-[10px] text-slate-500">Passe ou toque nas barras para consultar os valores de cada período.</p>}
+        </ChartCard>
+      </div>
+    </section>
+
     <section className="grid grid-cols-1 gap-4 xl:grid-cols-12">
       <section className="min-w-0 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5 xl:col-span-8">
         <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -192,6 +400,7 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
               <h2 className="text-sm font-black text-[#061121]">Movimentos da semana</h2>
             </div>
             <p className="mt-1 text-[11px] text-slate-500">Entre {dateLabel(data.weekStart)} e {dateLabel(data.weekEnd)}.</p>
+            {categoryFilter && <button type="button" onClick={() => setCategoryFilter(null)} className="mt-2 inline-flex min-h-8 items-center rounded-lg border border-cyan-200 bg-cyan-50 px-2.5 text-[10px] font-bold text-cyan-900 hover:bg-cyan-100">Limpar filtro de {categoryGroups.find((group) => group.key === categoryFilter)?.label}</button>}
           </div>
           <div className="flex w-fit rounded-xl bg-slate-100 p-1 text-xs font-bold">
             <button type="button" onClick={() => setTab('expenses')} className={`rounded-lg px-3 py-2 transition-colors ${tab === 'expenses' ? 'bg-white text-[#061121] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>Gastos</button>
@@ -210,7 +419,7 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
               <div className="min-w-0">
                 <p className="truncate text-xs font-bold text-slate-800">{item.title}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
-                  <span>{item.category}</span><span>·</span><span>{dateLabel(item.expense_date)}</span>
+                  <span>{expenseCategoryLabels[normalizeExpenseCategory(item.category)]}</span><span>·</span><span>{dateLabel(item.expense_date)}</span>
                   {item.is_recurring_monthly && <span className="rounded-full bg-amber-50 px-2 py-0.5 font-bold text-amber-800">Mensal · dia {item.recurrence_day}</span>}
                 </div>
               </div>
@@ -255,7 +464,7 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
             <div className="min-w-0 flex-1">
               <p className="truncate text-[11px] font-bold text-slate-800">{item.title}</p>
               <p className="mt-0.5 truncate text-[10px] text-slate-500">
-                {item.kind === 'expense' ? `Gasto · ${item.category}${item.is_recurring_monthly ? ` · Mensal (${item.recurrence_day})` : ''}` : `Renda extra · ${incomeLabels[item.category]}`}
+                {item.kind === 'expense' ? `Gasto · ${expenseCategoryLabels[normalizeExpenseCategory(item.category)]}${item.is_recurring_monthly ? ` · Mensal (${item.recurrence_day})` : ''}` : `Renda extra · ${incomeLabels[item.category]}`}
               </p>
               {item.kind === 'expense' && item.is_recurring_monthly && <span className="mt-1 inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">Recorrente</span>}
             </div>
@@ -398,7 +607,9 @@ export default function FinanceDashboard({ data }: { data: FinanceData }) {
             </select>
           </label>
           <label className="block text-xs font-semibold text-slate-700 mb-1.5">Categoria
-            <input name="category" required value={expense.category} onChange={(e) => setExpense({ ...expense, category: e.target.value })} className="w-full h-10 rounded-xl border border-slate-300 bg-slate-50/70 px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20" />
+            <select name="category" required value={expense.category} onChange={(e) => setExpense({ ...expense, category: e.target.value })} className="w-full h-10 rounded-xl border border-slate-300 bg-slate-50/70 px-3 text-sm text-slate-900 focus:border-cyan-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20">
+              {expenseCategories.map((category) => <option key={category.key} value={category.key}>{category.label}</option>)}
+            </select>
           </label>
         </div>
         <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
