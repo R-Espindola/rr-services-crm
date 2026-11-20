@@ -7,7 +7,11 @@ import { getAdminSession } from '@/lib/admin-auth'
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string }
 const FINANCE_RULES_ID = '00000000-0000-0000-0000-000000000001'
 const amountSchema = z.preprocess((value) => Number(String(value).replace(',', '.')), z.number().positive().max(10_000_000))
-const booleanSchema = z.preprocess((value) => value === true || value === 'true' || value === 'on', z.boolean())
+const booleanSchema = z.preprocess((value) => {
+  if (value === 'true' || value === 'on') return true
+  if (value === 'false') return false
+  return value
+}, z.boolean())
 const nullableDaySchema = z.preprocess((value) => value === '' || value === undefined || value === null ? null : Number(value), z.number().int().min(1).max(31).nullable())
 
 const rulesSchema = z.object({
@@ -24,6 +28,15 @@ const extraIncomeSchema = z.object({
 const revolutLogIdSchema = z.string().regex(/^[0-9a-f]{64}$/)
 const revolutOrderIdSchema = z.string().uuid()
 const revolutIncomeCategorySchema = z.enum(['freelance_web', 'bonus_servico', 'vendas', 'reembolso', 'outros'])
+const financeOrderIdSchema = z.string().uuid()
+
+function logSupabaseError(context: string, error: { message: string; details?: string | null; code: string }) {
+  console.error(`[Finanças] ${context}`, {
+    message: error.message,
+    details: error.details ?? null,
+    code: error.code,
+  })
+}
 
 export async function saveFinanceRules(input: unknown): Promise<ActionResult<null>> {
   const parsed = rulesSchema.safeParse(input)
@@ -31,7 +44,10 @@ export async function saveFinanceRules(input: unknown): Promise<ActionResult<nul
   const session = await getAdminSession()
   if (!session.success) return session
   const { error } = await session.supabase.from('finance_allocation_rules').upsert({ id: FINANCE_RULES_ID, tax_reserve_pct: parsed.data.taxReservePct, business_ops_pct: parsed.data.businessOpsPct, personal_weekly_pct: parsed.data.personalWeeklyPct, savings_pct: parsed.data.savingsPct, weekly_fixed_target: parsed.data.weeklyFixedTarget, updated_at: new Date().toISOString() }, { onConflict: 'id' })
-  if (error) return { success: false, error: `Não foi possível guardar as regras financeiras: ${error.message}` }
+  if (error) {
+    logSupabaseError('Falha ao guardar as regras financeiras', error)
+    return { success: false, error: 'Não foi possível guardar as regras financeiras.' }
+  }
   revalidatePath('/admin/financas')
   return { success: true, data: null }
 }
@@ -42,18 +58,38 @@ export async function createFinanceExpense(input: unknown): Promise<ActionResult
   const session = await getAdminSession()
   if (!session.success) return session
   const { data, error } = await session.supabase.from('finance_expenses').insert({ title: parsed.data.title, amount: parsed.data.amount, expense_type: parsed.data.expense_type, category: parsed.data.category, expense_date: parsed.data.expense_date, is_recurring_weekly: parsed.data.is_recurring_weekly, is_recurring_monthly: parsed.data.is_recurring_monthly, recurrence_day: parsed.data.recurrence_day, notes: parsed.data.notes }).select('id').single()
-  if (error || !data) return { success: false, error: `Não foi possível registar o gasto${error?.message ? `: ${error.message}` : '.'}` }
+  if (error) {
+    logSupabaseError('Falha ao registar um gasto', error)
+    return { success: false, error: 'Não foi possível registar o gasto.' }
+  }
+  if (!data) return { success: false, error: 'Não foi possível confirmar o registo do gasto.' }
   revalidatePath('/admin/financas')
   return { success: true, data: { id: data.id as string } }
 }
 
 export async function updateFinanceExpenseRecurrence(input: unknown): Promise<ActionResult<null>> {
-  const parsed = z.object({ id: z.string().uuid(), is_recurring_monthly: booleanSchema, recurrence_day: nullableDaySchema }).safeParse(input)
+  const parsed = z.object({
+    id: z.string().uuid(),
+    is_recurring_weekly: booleanSchema.optional(),
+    is_recurring_monthly: booleanSchema.optional(),
+    recurrence_day: nullableDaySchema.optional(),
+  }).refine((value) => value.is_recurring_weekly !== undefined || value.is_recurring_monthly !== undefined || value.recurrence_day !== undefined).safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Recorrência inválida.' }
   const session = await getAdminSession()
   if (!session.success) return session
-  const { error } = await session.supabase.from('finance_expenses').update({ is_recurring_monthly: parsed.data.is_recurring_monthly, recurrence_day: parsed.data.is_recurring_monthly ? parsed.data.recurrence_day : null, updated_at: new Date().toISOString() }).eq('id', parsed.data.id)
-  if (error) return { success: false, error: `Não foi possível atualizar a recorrência: ${error.message}` }
+  const updates: { is_recurring_weekly?: boolean; is_recurring_monthly?: boolean; recurrence_day?: number | null; updated_at: string } = { updated_at: new Date().toISOString() }
+  if (parsed.data.is_recurring_weekly !== undefined) updates.is_recurring_weekly = parsed.data.is_recurring_weekly
+  if (parsed.data.is_recurring_monthly !== undefined) {
+    updates.is_recurring_monthly = parsed.data.is_recurring_monthly
+    updates.recurrence_day = parsed.data.is_recurring_monthly ? parsed.data.recurrence_day ?? null : null
+  } else if (parsed.data.recurrence_day !== undefined) {
+    updates.recurrence_day = parsed.data.recurrence_day
+  }
+  const { error } = await session.supabase.from('finance_expenses').update(updates).eq('id', parsed.data.id)
+  if (error) {
+    logSupabaseError('Falha ao atualizar a recorrência de um gasto', error)
+    return { success: false, error: 'Não foi possível atualizar a recorrência.' }
+  }
   revalidatePath('/admin/financas')
   return { success: true, data: null }
 }
@@ -64,7 +100,11 @@ export async function createFinanceExtraIncome(input: unknown): Promise<ActionRe
   const session = await getAdminSession()
   if (!session.success) return session
   const { data, error } = await session.supabase.from('finance_extra_incomes').insert({ title: parsed.data.title, amount: parsed.data.amount, category: parsed.data.category, income_date: parsed.data.income_date, notes: parsed.data.notes || null }).select('id').single()
-  if (error || !data) return { success: false, error: `Não foi possível registar a renda extra${error?.message ? `: ${error.message}` : '.'}` }
+  if (error) {
+    logSupabaseError('Falha ao registar uma renda extra', error)
+    return { success: false, error: 'Não foi possível registar a renda extra.' }
+  }
+  if (!data) return { success: false, error: 'Não foi possível confirmar o registo da renda extra.' }
   revalidatePath('/admin/financas')
   return { success: true, data: { id: data.id as string } }
 }
@@ -75,7 +115,10 @@ export async function deleteFinanceExpense(input: unknown): Promise<ActionResult
   const session = await getAdminSession()
   if (!session.success) return session
   const { error } = await session.supabase.from('finance_expenses').delete().eq('id', parsed.data)
-  if (error) return { success: false, error: `Não foi possível eliminar o gasto: ${error.message}` }
+  if (error) {
+    logSupabaseError('Falha ao eliminar um gasto', error)
+    return { success: false, error: 'Não foi possível eliminar o gasto.' }
+  }
   revalidatePath('/admin/financas')
   return { success: true, data: null }
 }
@@ -86,7 +129,34 @@ export async function deleteFinanceExtraIncome(input: unknown): Promise<ActionRe
   const session = await getAdminSession()
   if (!session.success) return session
   const { error } = await session.supabase.from('finance_extra_incomes').delete().eq('id', parsed.data)
-  if (error) return { success: false, error: `Não foi possível eliminar a renda extra: ${error.message}` }
+  if (error) {
+    logSupabaseError('Falha ao eliminar uma renda extra', error)
+    return { success: false, error: 'Não foi possível eliminar a renda extra.' }
+  }
+  revalidatePath('/admin/financas')
+  return { success: true, data: null }
+}
+
+export async function markFinanceOrderPaid(input: unknown): Promise<ActionResult<null>> {
+  const parsed = financeOrderIdSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: 'Marcação inválida.' }
+  const session = await getAdminSession()
+  if (!session.success) return session
+
+  const { data, error } = await session.supabase.from('orders')
+    .update({ payment_status: 'paid' })
+    .eq('id', parsed.data)
+    .or('payment_status.is.null,payment_status.neq.paid')
+    .neq('status', 'cancelled')
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    logSupabaseError('Falha ao marcar uma limpeza como paga', error)
+    return { success: false, error: 'Não foi possível atualizar o estado do pagamento.' }
+  }
+  if (!data) return { success: false, error: 'A limpeza já está paga ou já não está disponível.' }
+
   revalidatePath('/admin/financas')
   return { success: true, data: null }
 }
@@ -105,7 +175,7 @@ export async function reconcileRevolutTransactionWithOrder(logId: string, orderI
   })
   if (error) {
     if (error.code === '22023') return { success: false, error: 'O movimento ou a limpeza já não estão pendentes, ou os montantes não correspondem.' }
-    console.error('Falha ao conciliar movimento Revolut:', error.message)
+    logSupabaseError('Falha ao conciliar movimento Revolut', error)
     return { success: false, error: 'Não foi possível conciliar o movimento Revolut.' }
   }
 
@@ -127,7 +197,7 @@ export async function convertRevolutTransactionToExtraIncome(logId: string, cate
   })
   if (error) {
     if (error.code === '22023') return { success: false, error: 'Este movimento já foi tratado ou não é uma transferência recebida.' }
-    console.error('Falha ao converter movimento Revolut em renda extra:', error.message)
+    logSupabaseError('Falha ao converter movimento Revolut em renda extra', error)
     return { success: false, error: 'Não foi possível registar a renda extra do Revolut.' }
   }
 
